@@ -1,6 +1,5 @@
 #include <time.h>
 
-#include "../uxn.h"
 #include "datetime.h"
 
 /*
@@ -22,8 +21,7 @@ void SecondPasssed()
 	seconds++;
 }
 
-Uint8
-datetime_dei(Device *d, Uint8 port)
+Uint8 datetime_dei(Device *d, Uint8 port)
 {
 	struct tm zt = {0};
 	struct tm *t = localtime(&seconds);

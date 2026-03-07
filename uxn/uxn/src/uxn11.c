@@ -3,6 +3,8 @@
 #include <unistd.h>
 #include <string.h>
 
+#include "uxn11.h"
+
 /*
 Copyright (c) 2021-2026 Devine Lu Linvega, Andrew Alderwick,
 Andrew Richards, Eiríkr Åsheim, Sigrid Solveig Haflínudóttir
@@ -17,14 +19,7 @@ WITH REGARD TO THIS SOFTWARE.
 cc -DNDEBUG -O2 -g0 -s src/uxn11.c -lX11 -lutil -o bin/uxn11
 */
 
-typedef signed char Sint8;
-typedef unsigned char Uint8;
-typedef unsigned short Uint16;
-typedef void (*deo_handler)(void);
-typedef Uint8 (*dei_handler)(void);
-
-static unsigned int uxn_eval(Uint16 pc);
-static Uint8 *ram, dev[0x100], stk[2][0x100], ptr[2];
+static Uint8 ram[0x10000], dev[0x100], stk[2][0x100], ptr[2];
 static int console_vector, screen_vector, controller_vector, mouse_vector;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
 
@@ -33,7 +28,7 @@ static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
 #define BANKS 0x10
 #define BANKS_CAP BANKS * 0x10000
 #define WIDTH (64 * 8)
-#define HEIGHT (40 * 8)
+#define HEIGHT (45 * 8)
 
 #define CLAMP(v, a, b) { if(v < a) v = a; else if(v >= b) v = b; }
 #define TWOS(v) (v & 0x8000 ? (int)v - 0x10000 : (int)v)
@@ -71,17 +66,14 @@ static unsigned int system_load(const char *rom_path)
 }
 	*/
 
-static unsigned int
-system_boot(char *rom_path, const unsigned int has_args)
+static unsigned int system_boot(char *rom_path, const unsigned int has_args)
 {
-	ram = (Uint8 *)calloc(BANKS_CAP, sizeof(Uint8));
 	system_boot_path = rom_path;
 	dev[0x17] = has_args;
-	return ram && system_load(rom_path);
+	return 0;//ram;// && system_load(rom_path);
 }
 
-static unsigned int
-system_reboot(const unsigned int soft)
+static unsigned int system_reboot(const unsigned int soft)
 {
 	memset(dev, 0, 0x100);
 	memset(stk[0], 0, 0x100);
@@ -93,7 +85,7 @@ system_reboot(const unsigned int soft)
 	ptr[0] = ptr[1] = 0;
 	console_vector = screen_vector = controller_vector = mouse_vector = 0;
 	rX = rY = rA = rMX = rMY = rMA = rML = rDX = rDY = rL1 = rL2 = 0;
-	return system_load(system_boot_path);
+	return uxn_load_rom(system_boot_path);
 }
 
 /* clang-format off */
@@ -102,7 +94,7 @@ static Uint8 system_dei_wst(void) { return ptr[0]; }
 static Uint8 system_dei_rst(void) { return ptr[1]; }
 static void system_deo_wst(void) { ptr[0] = dev[4]; }
 static void system_deo_rst(void) { ptr[1] = dev[5]; }
-static void system_deo_print(void) { system_print("WST", 0), system_print("RST", 1); }
+//static void system_deo_print(void) { system_print("WST", 0), system_print("RST", 1); }
 
 /* clang-format on */
 
@@ -114,8 +106,7 @@ static void system_deo_print(void) { system_print("WST", 0), system_print("RST",
 #define CONSOLE_EOA 0x3
 #define CONSOLE_END 0x4
 
-static unsigned int
-console_input(int c, unsigned int type)
+static unsigned int console_input(int c, unsigned int type)
 {
 	if(c == EOF) c = 0, type = CONSOLE_END;
 	dev[0x12] = c, dev[0x17] = type;
@@ -125,24 +116,22 @@ console_input(int c, unsigned int type)
 
 /* clang-format off */
 
-static Uint8 console_dei_childlive(void) { check_child(); return dev[CMD_LIVE]; }
-static Uint8 console_dei_childexit(void) { check_child(); return dev[CMD_EXIT]; }
+//static Uint8 console_dei_childlive(void) { check_child(); return dev[CMD_LIVE]; }
+//static Uint8 console_dei_childexit(void) { check_child(); return dev[CMD_EXIT]; }
 static void console_deo_vector(void) { console_vector = peek2(&dev[0x10]); }
-static void console_deo_stdout(void) { fputc(dev[0x18], stdout), fflush(stdout); }
-static void console_deo_stderr(void) { fputc(dev[0x19], stderr), fflush(stderr); }
-static void console_deo_hb(void) { fprintf(stderr, "%02x", dev[0x1a]); }
-static void console_deo_lb(void) { fprintf(stderr, "%02x", dev[0x1b]); }
+static void console_deo_stdout(void) { putchar(dev[0x18]); }
+static void console_deo_stderr(void) { putchar(dev[0x19]); }
+//static void console_deo_hb(void) { fprintf(stderr, "%02x", dev[0x1a]); }
+//static void console_deo_lb(void) { fprintf(stderr, "%02x", dev[0x1b]); }
 
 /* clang-format on */
 
 /*
 @|Screen ------------------------------------------------------------ */
-
+#include "../core1.h"
 static int screen_zoom = 1, screen_reqsize, screen_reqdraw;
 static int screen_width, screen_height, screen_wmar2, screen_hmar2;
 static int screen_x1, screen_y1, screen_x2, screen_y2;
-static int *screen_pixels, screen_palette[16];
-static Uint8 *screen_layers;
 
 static const Uint8 blend_lut[16][2][4] = {
 	{{0, 0, 1, 2}, {0, 0, 4, 8}},
@@ -164,8 +153,6 @@ static const Uint8 blend_lut[16][2][4] = {
 
 static const Uint8 alpha_lut[16] = {0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0};
 
-void emu_redraw(void), emu_resize(void);
-
 static void screen_change(const int x1, const int y1, const int x2, const int y2)
 {
 	screen_x1 = x1 < screen_x1 ? x1 : screen_x1;
@@ -176,35 +163,31 @@ static void screen_change(const int x1, const int y1, const int x2, const int y2
 
 static void system_deo_colorize(void)
 {
-	unsigned int i, shift, colors[4];
-	for(i = 0, shift = 4; i < 4; ++i, shift ^= 4) {
-		Uint8
-			r = dev[0x8 + i / 2] >> shift & 0xf,
-			g = dev[0xa + i / 2] >> shift & 0xf,
-			b = dev[0xc + i / 2] >> shift & 0xf;
-		colors[i] = 0x0f000000 | r << 16 | g << 8 | b;
-		colors[i] |= colors[i] << 4;
-	}
-	for(i = 0; i < 16; i++)
-		screen_palette[i] = colors[i >> 2 ? i >> 2 : i & 3];
-	screen_reqdraw = 1;
+    uint8_t colors[4];
+    for(size_t i = 0; i < 4; ++i) 
+    {
+        Uint8 r = ((dev[0x8 + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
+        Uint8 g = ((dev[0xa + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
+        Uint8 b = ((dev[0xc + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
+
+        colors[i] = ((r & 0xE0) + ((g & 0xE0) >> 3) + ((b & 0xC0) >> 6));
+    }
+    core1_setPalette(colors);
+    core1_setBackground(0);
 }
 
 static void screen_resize(int width, int height)
 {
 	if(width != screen_width || height != screen_height) {
-		int length;
 		screen_width = width, screen_wmar2 = width + 0x10;
 		poke2(&dev[0x22], screen_width);
 		screen_height = height, screen_hmar2 = height + 0x10;
 		poke2(&dev[0x24], screen_height);
-		length = screen_wmar2 * screen_hmar2;
-		screen_layers = realloc(screen_layers, length);
-		memset(screen_layers, 0, length);
 		screen_reqsize = screen_reqdraw = 1;
 	}
 }
 
+/*
 static void screen_redraw(void)
 {
 	if(screen_zoom == 1) {
@@ -239,32 +222,26 @@ static void screen_redraw(void)
 	emu_redraw();
 	screen_x1 = screen_y1 = screen_x2 = screen_y2 = screen_reqdraw = 0;
 }
+*/
 
-static void screen_update(void)
+void screen_update(void)
 {
 	if(screen_vector)
 		uxn_eval(screen_vector);
 	if(screen_reqsize) {
-		static int pixel_capacity;
-		int need = screen_width * screen_height * screen_zoom * screen_zoom;
-		if(need > pixel_capacity) {
-			pixel_capacity = need;
-			screen_pixels = realloc(screen_pixels, need * sizeof(unsigned int));
-		}
-		screen_reqsize = 0;
-		emu_resize();
+
 	}
 	if(screen_reqdraw) {
 		screen_x1 = screen_y1 = 0;
 		screen_x2 = screen_width;
 		screen_y2 = screen_height;
-		screen_redraw();
+		core1_updateScreen();
 	} else if(screen_x2 > screen_x1 && screen_y2 > screen_y1) {
 		CLAMP(screen_x1, 0, screen_width);
 		CLAMP(screen_y1, 0, screen_height);
 		CLAMP(screen_x2, 0, screen_width);
 		CLAMP(screen_y2, 0, screen_height);
-		screen_redraw();
+		core1_updateScreen();
 	}
 }
 
@@ -274,7 +251,7 @@ static void screen_deo_pixel(void)
 	const int hi = ctrl & 0x40;
 	const Uint8 mask = hi ? 0x3 : 0xc;
 	const Uint8 color = hi ? ((ctrl & 0x3) << 2) : (ctrl & 0x3);
-	/* fill mode */
+	// fill mode 
 	if(ctrl & 0x80) {
 		int px;
 		const int x1 = (ctrl & 0x10) ? 8 : rX + 8;
@@ -283,6 +260,8 @@ static void screen_deo_pixel(void)
 		const int y2 = (ctrl & 0x20) ? rY : screen_height;
 		const int hor = (x2 + 8) - x1;
 		const int ver = (y2 + 8) - y1;
+		//TODO: fill mode
+		/*
 		Uint8 *row = &screen_layers[y1 * screen_wmar2 + x1];
 		Uint8 *end = row + ver * screen_wmar2;
 		for(; row < end; row += screen_wmar2) {
@@ -290,14 +269,16 @@ static void screen_deo_pixel(void)
 			for(px = 0; px < hor; px++)
 				dst[px] = (dst[px] & mask) | color;
 		}
+		*/
 		screen_reqdraw = 1;
 	}
-	/* pixel mode */
+	// pixel mode 
 	else {
 		const Uint16 x = rX, y = rY;
 		if(x < screen_width && y < screen_height) {
-			Uint8 *dst = &screen_layers[(y + 8) * screen_wmar2 + (x + 8)];
-			*dst = (*dst & mask) | color;
+			//Uint8 *dst = &screen_layers[(y + 8) * screen_wmar2 + (x + 8)];
+			//*dst = (*dst & mask) | color;  //TODO: apply mask
+			core1_setPixel(x+8, y+8, mask, color);
 			screen_reqdraw = 1;
 		}
 		if(rMX) rX++;
@@ -320,15 +301,15 @@ static void screen_deo_sprite(void)
 	for(i = 0; i <= rML; i++, x += dx, y += dy, rA += addr_2bpp) {
 		const Uint16 x0 = x + 8, y0 = y + 8;
 		if(x0 + 8 >= screen_wmar2 || y0 + 8 >= screen_hmar2) continue;
-		Uint8 *dst = screen_layers + y0 * screen_wmar2 + x0;
 		const Uint8 *col = &ram[rA + col_start];
-		for(j = 0; j < 8; j++, dst += screen_wmar2, col += col_delta) {
-			Uint8 *d = dst;
+		for(j = 0; j < 8; j++, col += col_delta) {
 			const int ch1 = *col, ch2 = mode_2bpp ? col[8] : 0;
-			for(int k = 0, row = row_start; k < 8; k++, d++, row += row_delta) {
+			for(int k = 0, row = row_start; k < 8; k++, row += row_delta) {
 				const int color = ((ch1 >> row) & 1) | (((ch2 >> row) & 1) << 1);
 				if(opaque || color)
-					*d = (*d & layer_mask) | table[color];
+				{
+					core1_setPixel(x0+k, y0+j, layer_mask, table[color]);
+				}
 			}
 		}
 	}
@@ -350,8 +331,8 @@ static Uint8 screen_dei_rylb(void) { return rY; }
 static Uint8 screen_dei_rahb(void) { return rA >> 8; }
 static Uint8 screen_dei_ralb(void) { return rA; }
 static void screen_deo_vector(void) { screen_vector = peek2(&dev[0x20]); }
-static void screen_deo_width(void) { screen_resize(peek2(&dev[0x22]) & 0xfff, screen_height & 0xfff); }
-static void screen_deo_height(void) { screen_resize(screen_width & 0xfff, peek2(&dev[0x24]) & 0xfff); }
+static void screen_deo_width(void) { /*screen_resize(peek2(&dev[0x22]) & 0xfff, screen_height & 0xfff);*/ }
+static void screen_deo_height(void) { /*screen_resize(screen_width & 0xfff, peek2(&dev[0x24]) & 0xfff);*/ }
 static void screen_deo_auto(void) { rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; }
 static void screen_deo_x(void) { rX = (dev[0x28] << 8) | dev[0x29], rX = TWOS(rX); }
 static void screen_deo_y(void) { rY = (dev[0x2a] << 8) | dev[0x2b], rY = TWOS(rY); }
@@ -432,249 +413,42 @@ void mouse_deo_vector(void)
 /*
 @|File -------------------------------------------------------------- */
 
-#include <dirent.h>
-#include <sys/stat.h>
-#include <string.h>
-
-typedef struct {
-	FILE *f;
-	DIR *dir;
-	char *filepath;
-	enum { IDLE,
-		FILE_READ,
-		FILE_WRITE,
-		DIR_READ,
-		DIR_WRITE
-	} state;
-} UxnFile;
+#include "devices/file.h"
 
 static UxnFile ufs[2];
 
-static void make_pathfile(char *pathbuf, const char *filepath, const char *basename)
-{
-	char c = '/';
-	while(*filepath)
-		c = *filepath++, *pathbuf = c, pathbuf++;
-	if(c != '/')
-		*pathbuf = '/', pathbuf++;
-	while(*basename)
-		*pathbuf = *basename++, pathbuf++;
-	*pathbuf = 0;
-}
-
-static unsigned int put_fill(Uint8 *dest, unsigned int len, char c)
-{
-	memset(dest, c, len);
-	return len;
-}
-
-static unsigned int put_size(Uint8 *dest, unsigned int len, unsigned int size)
-{
-	unsigned int i;
-	for(i = 0, dest += len; i < len; i++, size >>= 4)
-		*(--dest) = "0123456789abcdef"[(Uint8)(size & 0xf)];
-	return len;
-}
-
-static unsigned int put_text(Uint8 *dest, const char *text)
-{
-	Uint8 *anchor = dest;
-	while(*text)
-		*dest = *text++, dest++;
-	*dest = 0;
-	return dest - anchor;
-}
-
-static unsigned int put_stat(Uint8 *dest, unsigned int len, unsigned int size, unsigned int err, unsigned int dir, unsigned int capsize)
-{
-	if(err) return put_fill(dest, len, '!');
-	if(dir) return put_fill(dest, len, '-');
-	if(capsize && size >= 0x10000) return put_fill(dest, len, '?');
-	return put_size(dest, len, size);
-}
-
-static unsigned int put_statfile(Uint8 *dest, const char *filepath, const char *basename)
-{
-	unsigned int err, dir;
-	struct stat st;
-	Uint8 *anchor = dest;
-	char pathbuf[0x2000];
-	make_pathfile(pathbuf, filepath, basename);
-	err = stat(pathbuf, &st);
-	dir = !err && S_ISDIR(st.st_mode);
-	dest += put_stat(dest, 4, st.st_size, err, dir, 1);
-	dest += put_text(dest, " ");
-	dest += put_text(dest, basename);
-	dest += put_text(dest, dir ? "/\n" : "\n");
-	return dest - anchor;
-}
-
-static unsigned int put_fdir(Uint8 *dest, unsigned int len, const char *filepath, DIR *dir)
-{
-	Uint8 *p = dest, *end = dest + len - 1;
-	struct dirent *de;
-	while((de = readdir(dir)) && p < end) {
-		const char *name = de->d_name;
-		if(name[0] == '.' && (!name[1] || (name[1] == '.' && !name[2])))
-			continue;
-		p += put_statfile(p, filepath, name);
-	}
-	*p = 0;
-	return p - dest;
-}
-
-static unsigned int is_dir_path(const char *p)
-{
-	const char *end = p;
-	while(*end) end++;
-	return end > p && end[-1] == '/';
-}
-
-static unsigned int is_dir_real(char *p)
-{
-	struct stat st;
-	return stat(p, &st) == 0 && S_ISDIR(st.st_mode);
-}
-
-static unsigned int file_write_dir(const char *p)
-{
-	char buf[0x1000];
-	char *s = buf;
-	unsigned int ok = 1;
-	while(*p && ok) {
-		*s++ = *p;
-		if(*p++ == '/') {
-			s[-1] = '\0';
-			ok = is_dir_real(buf) || mkdir(buf, 0755) == 0;
-			s[-1] = '/';
-		}
-	}
-	return ok;
-}
-
-static void file_reset(unsigned int id)
-{
-	if(ufs[id].f != NULL) fclose(ufs[id].f), ufs[id].f = NULL;
-	if(ufs[id].dir != NULL) closedir(ufs[id].dir), ufs[id].dir = NULL;
-	ufs[id].state = IDLE;
-}
-
-static unsigned int file_init(unsigned int id, Uint16 addr)
-{
-	file_reset(id);
-	ufs[id].filepath = (char *)&ram[addr];
-	return 0;
-}
-
-static unsigned int file_read(unsigned int id, Uint16 addr, unsigned int len)
-{
-	void *dest = &ram[addr];
-	struct stat st;
-	unsigned int n;
-	if(ufs[id].filepath == 0)
-		return 0;
-	if(addr + len > 0x10000)
-		len = 0x10000 - addr;
-	if(ufs[id].state != FILE_READ && ufs[id].state != DIR_READ) {
-		file_reset(id);
-		if(stat(ufs[id].filepath, &st) == 0 && S_ISDIR(st.st_mode)) {
-			if((ufs[id].dir = opendir(ufs[id].filepath)) != NULL)
-				ufs[id].state = DIR_READ;
-		} else if((ufs[id].f = fopen(ufs[id].filepath, "rb")) != NULL) {
-			ufs[id].state = FILE_READ;
-		}
-	}
-	if(ufs[id].state == FILE_READ) {
-		n = fread(dest, 1, len, ufs[id].f);
-		if(n == 0) file_reset(id);
-		return n;
-	}
-	if(ufs[id].state == DIR_READ) {
-		n = put_fdir(dest, len, ufs[id].filepath, ufs[id].dir);
-		if(n == 0) file_reset(id);
-		return n;
-	}
-	return 0;
-}
-
-static unsigned int file_write(unsigned int id, Uint16 addr, unsigned int len, Uint8 flags)
-{
-	unsigned int ret = 0;
-	if(ufs[id].filepath == 0)
-		return 0;
-	if(addr + len > 0x10000)
-		len = 0x10000 - addr;
-	file_write_dir(ufs[id].filepath);
-	if(ufs[id].state != FILE_WRITE && ufs[id].state != DIR_WRITE) {
-		file_reset(id);
-		if(is_dir_path(ufs[id].filepath))
-			ufs[id].state = DIR_WRITE;
-		else if((ufs[id].f = fopen(ufs[id].filepath, (flags & 0x01) ? "ab" : "wb")) != NULL)
-			ufs[id].state = FILE_WRITE;
-	}
-	if(ufs[id].state == FILE_WRITE)
-		if((ret = fwrite(&ram[addr], 1, len, ufs[id].f)) > 0 && fflush(ufs[id].f) != 0)
-			ret = 0;
-	if(ufs[id].state == DIR_WRITE)
-		ret = is_dir_real(ufs[id].filepath);
-	return ret;
-}
-
-static unsigned int file_stat(unsigned int id, Uint16 addr, unsigned int len)
-{
-	unsigned int err, dir;
-	struct stat st;
-	if(ufs[id].filepath == 0)
-		return 0;
-	if(addr + len > 0x10000)
-		len = 0x10000 - addr;
-	err = stat(ufs[id].filepath, &st);
-	dir = !err && S_ISDIR(st.st_mode);
-	return put_stat(&ram[addr], len, st.st_size, err, dir, 0);
-}
-
-static unsigned int file_delete(unsigned int id)
-{
-	if(ufs[id].filepath == 0)
-		return 0;
-	return !unlink(ufs[id].filepath);
-}
-
 /* clang-format off */
 
-static void filea_deo_stat(void) { poke2(&dev[0xa2], file_stat(0, peek2(&dev[0xa4]), rL1)); }
-static void filea_deo_delete(void) { poke2(&dev[0xa2], file_delete(0)); }
-static void filea_deo_name(void) { poke2(&dev[0xa2], file_init(0, peek2(&dev[0xa8]))); }
+static void filea_deo_stat(void)   { poke2(&dev[0xa2], file_stat(&ufs[0], &ram[peek2(&dev[0xa4])], rL1)); }   
+static void filea_deo_delete(void) { poke2(&dev[0xa2], file_delete(&ufs[0])); }
+static void filea_deo_name(void)   { poke2(&dev[0xa2], file_init(&ufs[0], (char *)&ram[peek2(&dev[0xa8])])); }
 static void filea_deo_length(void) { rL1 = peek2(&dev[0xaa]); }
-static void filea_deo_read(void) { poke2(&dev[0xa2], file_read(0, peek2(&dev[0xac]), rL1)); }
-static void filea_deo_write(void) { poke2(&dev[0xa2], file_write(0, peek2(&dev[0xae]), rL1, dev[0xa7])); }
-static void fileb_deo_stat(void) { poke2(&dev[0xb2], file_stat(1, peek2(&dev[0xb4]), rL2)); }
-static void fileb_deo_delete(void) { poke2(&dev[0xb2], file_delete(1)); }
-static void fileb_deo_name(void) { poke2(&dev[0xb2], file_init(1, peek2(&dev[0xb8]))); }
-static void fileb_deo_length(void) { rL2 = peek2(&dev[0xba]); }
-static void fileb_deo_read(void) { poke2(&dev[0xb2], file_read(1, peek2(&dev[0xbc]), rL2)); }
-static void fileb_deo_write(void) { poke2(&dev[0xb2], file_write(1, peek2(&dev[0xbe]), rL2, dev[0xb7])); }
+static void filea_deo_read(void)   { poke2(&dev[0xa2], file_read(&ufs[0], &ram[peek2(&dev[0xac])], rL1)); }
+static void filea_deo_write(void)  { poke2(&dev[0xa2], file_write(&ufs[0], &ram[peek2(&dev[0xae])], rL1, dev[0xa7])); }
+//static void fileb_deo_stat(void) { poke2(&dev[0xb2], file_stat(1, peek2(&dev[0xb4]), rL2)); }
+//static void fileb_deo_delete(void) { poke2(&dev[0xb2], file_delete(1)); }
+//static void fileb_deo_name(void) { poke2(&dev[0xb2], file_init(1, peek2(&dev[0xb8]))); }
+//static void fileb_deo_length(void) { rL2 = peek2(&dev[0xba]); }
+//static void fileb_deo_read(void) { poke2(&dev[0xb2], file_read(1, peek2(&dev[0xbc]), rL2)); }
+//static void fileb_deo_write(void) { poke2(&dev[0xb2], file_write(1, peek2(&dev[0xbe]), rL2, dev[0xb7])); }
 
 /* clang-format on */
 
 /*
 @|Datetime ---------------------------------------------------------- */
-
 #include <time.h>
+time_t seconds = 0;
+struct tm *datetime_t;
 
-int datetime_busy;
-time_t datetime_seconds;
-struct tm *datetime_t, datetime_zt = {0};
-
-void datetime_update(void)
+void SecondPasssed()
 {
-	if(!datetime_busy) {
-		datetime_seconds = time(NULL);
-		datetime_t = localtime(&datetime_seconds);
-		if(datetime_t == NULL)
-			datetime_t = &datetime_zt;
-		datetime_busy = 1;
-	}
+	seconds++;
+}
+
+void datetime_update()
+{
+	struct tm *t = localtime(&seconds);
+	datetime_t = t;
 }
 
 /* clang-format off */
@@ -727,12 +501,12 @@ static const deo_handler deo_handlers[256] = {
 	[0x0b] = system_deo_colorize,
 	[0x0c] = system_deo_colorize,
 	[0x0d] = system_deo_colorize,
-	[0x0e] = system_deo_print,
+	//[0x0e] = system_deo_print,
 	[0x11] = console_deo_vector,
 	[0x18] = console_deo_stdout,
 	[0x19] = console_deo_stderr,
-	[0x1a] = console_deo_hb,
-	[0x1b] = console_deo_lb,
+	//[0x1a] = console_deo_hb,
+	//[0x1b] = console_deo_lb,
 	[0x21] = screen_deo_vector,
 	[0x23] = screen_deo_width,
 	[0x25] = screen_deo_height,
@@ -745,30 +519,28 @@ static const deo_handler deo_handlers[256] = {
 	[0x2d] = screen_deo_addr,
 	[0x2e] = screen_deo_pixel,
 	[0x2f] = screen_deo_sprite,
-	[0x81] = controller_deo_vector,
-	[0x91] = mouse_deo_vector,
+	//[0x81] = controller_deo_vector,
+	//[0x91] = mouse_deo_vector,
 	[0xa5] = filea_deo_stat,
 	[0xa6] = filea_deo_delete,
 	[0xa9] = filea_deo_name,
 	[0xab] = filea_deo_length,
 	[0xad] = filea_deo_read,
-	[0xaf] = filea_deo_write,
-	[0xb5] = fileb_deo_stat,
-	[0xb6] = fileb_deo_delete,
-	[0xb9] = fileb_deo_name,
-	[0xbb] = fileb_deo_length,
-	[0xbd] = fileb_deo_read,
-	[0xbf] = fileb_deo_write};
+	[0xaf] = filea_deo_write};
+	//[0xb5] = fileb_deo_stat,
+	//[0xb6] = fileb_deo_delete,
+	//[0xb9] = fileb_deo_name,
+	//[0xbb] = fileb_deo_length,
+	//[0xbd] = fileb_deo_read,
+	//[0xbf] = fileb_deo_write};
 
-static inline Uint8
-emu_dei(const Uint8 port)
+static inline Uint8 emu_dei(const Uint8 port)
 {
 	dei_handler h = dei_handlers[port];
 	return h ? h() : dev[port];
 }
 
-static inline void
-emu_deo(const Uint8 port, const Uint8 value)
+static inline void emu_deo(const Uint8 port, const Uint8 value)
 {
 	deo_handler h = deo_handlers[port];
 	dev[port] = value;
@@ -799,52 +571,61 @@ emu_deo(const Uint8 port, const Uint8 value)
 #define POK(o,v,m) ram[o] = v[0]; if(d) ram[(o + 1) & m] = v[1];
 #define PEK(i,v,m) v[0] = ram[i]; if(d) v[1] = ram[(i + 1) & m]; PUT(v,r)
 
-static unsigned int
-uxn_eval(Uint16 pc)
+unsigned int __not_in_flash("") uxn_eval(Uint16 pc)
 {
 	unsigned int a, b, c, x[2], y[2], z[2];
-	for(;;)
-	switch(ram[pc++]) {
-	/* BRK */ case 0x00: return 1;
-	/* JCI */ case 0x20: if(DEC(0)) { IMM pc += a; } else pc += 2; break;
-	/* JMI */ case 0x40: IMM pc += a; break;
-	/* JSI */ case 0x60: IMM PUx(pc, 1, 1) pc += a; break;
-	/* LI2 */ case 0xa0: INC(0) = ram[pc++]; /* fall-through */
-	/* LIT */ case 0x80: INC(0) = ram[pc++]; break;
-	/* L2r */ case 0xe0: INC(1) = ram[pc++]; /* fall-through */
-	/* LIr */ case 0xc0: INC(1) = ram[pc++]; break;
-	/* INC */ OPC(0x01,POx(a,d),PUx(a + 1,d,r))
-	/* POP */ OPC(0x02,ptr[r] -= 1 + d;,{})
-	/* NIP */ OPC(0x03,GOT(x) ptr[r] -= 1 + d;,PUT(x,r))
-	/* SWP */ OPC(0x04,GOT(x) GOT(y),PUT(x,r) PUT(y,r))
-	/* ROT */ OPC(0x05,GOT(x) GOT(y) GOT(z),PUT(y,r) PUT(x,r) PUT(z,r))
-	/* DUP */ OPC(0x06,GOT(x),PUT(x,r) PUT(x,r))
-	/* OVR */ OPC(0x07,GOT(x) GOT(y),PUT(y,r) PUT(x,r) PUT(y,r))
-	/* EQU */ OPC(0x08,POx(a,d) POx(b,d),PUx(b == a,0,r))
-	/* NEQ */ OPC(0x09,POx(a,d) POx(b,d),PUx(b != a,0,r))
-	/* GTH */ OPC(0x0a,POx(a,d) POx(b,d),PUx(b > a,0,r))
-	/* LTH */ OPC(0x0b,POx(a,d) POx(b,d),PUx(b < a,0,r))
-	/* JMP */ OPC(0x0c,POx(a,d),MOV)
-	/* JCN */ OPC(0x0d,POx(a,d) POx(b,0),if(b) MOV)
-	/* JSR */ OPC(0x0e,POx(a,d),PUx(pc,1,!r) MOV)
-	/* STH */ OPC(0x0f,GOT(x),PUT(x,!r))
-	/* LDZ */ OPC(0x10,POx(a,0),PEK(a, x, 0xff))
-	/* STZ */ OPC(0x11,POx(a,0) GOT(y),POK(a, y, 0xff))
-	/* LDR */ OPC(0x12,POx(a,0),PEK(pc + (Sint8)a, x, 0xffff))
-	/* STR */ OPC(0x13,POx(a,0) GOT(y),POK(pc + (Sint8)a, y, 0xffff))
-	/* LDA */ OPC(0x14,POx(a,1),PEK(a, x, 0xffff))
-	/* STA */ OPC(0x15,POx(a,1) GOT(y),POK(a, y, 0xffff))
-	/* DEI */ OPC(0x16,POx(a,0),DEI(a, x))
-	/* DEO */ OPC(0x17,POx(a,0) GOT(y),DEO(a, y))
-	/* ADD */ OPC(0x18,POx(a,d) POx(b,d),PUx(b + a, d,r))
-	/* SUB */ OPC(0x19,POx(a,d) POx(b,d),PUx(b - a, d,r))
-	/* MUL */ OPC(0x1a,POx(a,d) POx(b,d),PUx(b * a, d,r))
-	/* DIV */ OPC(0x1b,POx(a,d) POx(b,d),PUx(a ? b / a : 0, d,r))
-	/* AND */ OPC(0x1c,POx(a,d) POx(b,d),PUx(b & a, d,r))
-	/* ORA */ OPC(0x1d,POx(a,d) POx(b,d),PUx(b | a, d,r))
-	/* EOR */ OPC(0x1e,POx(a,d) POx(b,d),PUx(b ^ a, d,r))
-	/* SFT */ OPC(0x1f,POx(a,0) POx(b,d),PUx(b >> (a & 0xf) << (a >> 4), d,r))
-	} return 0;
+	while(1)
+	{
+		switch(ram[pc++]) 
+		{
+		/* BRK */ case 0x00: return 1;
+		/* JCI */ case 0x20: if(DEC(0)) { IMM pc += a; } else pc += 2; break;
+		/* JMI */ case 0x40: IMM pc += a; break;
+		/* JSI */ case 0x60: IMM PUx(pc, 1, 1) pc += a; break;
+		/* LI2 */ case 0xa0: INC(0) = ram[pc++]; /* fall-through */
+		/* LIT */ case 0x80: INC(0) = ram[pc++]; break;
+		/* L2r */ case 0xe0: INC(1) = ram[pc++]; /* fall-through */
+		/* LIr */ case 0xc0: INC(1) = ram[pc++]; break;
+		/* INC */ OPC(0x01,POx(a,d),PUx(a + 1,d,r))
+		/* POP */ OPC(0x02,ptr[r] -= 1 + d;,{})
+		/* NIP */ OPC(0x03,GOT(x) ptr[r] -= 1 + d;,PUT(x,r))
+		/* SWP */ OPC(0x04,GOT(x) GOT(y),PUT(x,r) PUT(y,r))
+		/* ROT */ OPC(0x05,GOT(x) GOT(y) GOT(z),PUT(y,r) PUT(x,r) PUT(z,r))
+		/* DUP */ OPC(0x06,GOT(x),PUT(x,r) PUT(x,r))
+		/* OVR */ OPC(0x07,GOT(x) GOT(y),PUT(y,r) PUT(x,r) PUT(y,r))
+		/* EQU */ OPC(0x08,POx(a,d) POx(b,d),PUx(b == a,0,r))
+		/* NEQ */ OPC(0x09,POx(a,d) POx(b,d),PUx(b != a,0,r))
+		/* GTH */ OPC(0x0a,POx(a,d) POx(b,d),PUx(b > a,0,r))
+		/* LTH */ OPC(0x0b,POx(a,d) POx(b,d),PUx(b < a,0,r))
+		/* JMP */ OPC(0x0c,POx(a,d),MOV)
+		/* JCN */ OPC(0x0d,POx(a,d) POx(b,0),if(b) MOV)
+		/* JSR */ OPC(0x0e,POx(a,d),PUx(pc,1,!r) MOV)
+		/* STH */ OPC(0x0f,GOT(x),PUT(x,!r))
+		/* LDZ */ OPC(0x10,POx(a,0),PEK(a, x, 0xff))
+		/* STZ */ OPC(0x11,POx(a,0) GOT(y),POK(a, y, 0xff))
+		/* LDR */ OPC(0x12,POx(a,0),PEK(pc + (Sint8)a, x, 0xffff))
+		/* STR */ OPC(0x13,POx(a,0) GOT(y),POK(pc + (Sint8)a, y, 0xffff))
+		/* LDA */ OPC(0x14,POx(a,1),PEK(a, x, 0xffff))
+		/* STA */ OPC(0x15,POx(a,1) GOT(y),POK(a, y, 0xffff))
+		/* DEI */ OPC(0x16,POx(a,0),DEI(a, x))
+		/* DEO */ OPC(0x17,POx(a,0) GOT(y),DEO(a, y))
+		/* ADD */ OPC(0x18,POx(a,d) POx(b,d),PUx(b + a, d,r))
+		/* SUB */ OPC(0x19,POx(a,d) POx(b,d),PUx(b - a, d,r))
+		/* MUL */ OPC(0x1a,POx(a,d) POx(b,d),PUx(b * a, d,r))
+		/* DIV */ OPC(0x1b,POx(a,d) POx(b,d),PUx(a ? b / a : 0, d,r))
+		/* AND */ OPC(0x1c,POx(a,d) POx(b,d),PUx(b & a, d,r))
+		/* ORA */ OPC(0x1d,POx(a,d) POx(b,d),PUx(b | a, d,r))
+		/* EOR */ OPC(0x1e,POx(a,d) POx(b,d),PUx(b ^ a, d,r))
+		/* SFT */ OPC(0x1f,POx(a,0) POx(b,d),PUx(b >> (a & 0xf) << (a >> 4), d,r))
+		} 
+	}
+	return 0;
+}
+
+int uxn_load_rom(char *filename)
+{
+	load_rom(ram, filename);
+	screen_resize(WIDTH, HEIGHT);
 }
 
 /* clang-format on */

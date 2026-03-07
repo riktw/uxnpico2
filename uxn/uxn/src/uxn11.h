@@ -12,11 +12,7 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 WITH REGARD TO THIS SOFTWARE.
 */
 
-typedef unsigned char Uint8;
-typedef signed char Sint8;
-typedef unsigned short Uint16;
-typedef signed short Sint16;
-typedef unsigned int Uint32;
+#include "uxntypes.h"
 
 #define PAGE_PROGRAM 0x0100
 
@@ -46,8 +42,11 @@ typedef struct Uxn {
 	Device dev[16];
 } Uxn11;
 
+void SecondPasssed();
+void screen_update(void);
 int uxn_boot(Uxn11 *u, Uint8 *ram);
-int uxn11_eval(Uxn11 *u, Uint16 pc);
+unsigned int uxn_eval(Uint16 pc);
+int uxn_load_rom(char *filename);
 //int uxn_interrupt(void);
 //int uxn_halt(Uxn *u, Uint8 error, Uint16 addr);
 Device *uxn_port(Uxn11 *u, Uint8 id, Uint8 (*deifn)(Device *, Uint8), void (*deofn)(Device *, Uint8));

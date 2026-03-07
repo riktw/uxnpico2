@@ -34,7 +34,7 @@ pico_sdk_init()
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/Libraries/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/src build)
 
-add_executable(uxn_rpi uxn_rpi.c core1.c uxn/uxn/src/uxn.c uxn/uxn/src/devices/system.c uxn/uxn/src/devices/file.c uxn/uxn/src/devices/datetime.c  hw_config.c)
+add_executable(uxn_rpi uxn_rpi.c core1.c uxn/uxn/src/uxn11.c uxn/uxn/src/devices/file.c  hw_config.c)
 
 pico_set_program_name(uxn_rpi "uxn_rpi")
 pico_set_program_version(uxn_rpi "0.1")

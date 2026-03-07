@@ -14,7 +14,7 @@
 
 
 static char __attribute__((aligned(4), section(".ram_fb"))) framebuf[640*360] = {0};  //TODO: actual use a section?
-static char __attribute__((aligned(4), section(".ram_ub"))) uxnbuf[(512*360)/2] = {0};  //TODO: actual use a section?
+static char __attribute__((aligned(4), section(".ram_ub"))) uxnbuf[((512+16)*(360+16))/2] = {0};  //TODO: actual use a section?
 static char dirty_lines[360] = {0};
 const char emptyline[640] = {0};
 static int inBlanking;
@@ -305,40 +305,23 @@ void core1_setBackground(uint8_t color)
     memset(framebuf, palette[color], sizeof(framebuf));
 }
 
-void core1_setPixel(uint16_t x, uint16_t y, uint8_t color, uint8_t layer)
+void core1_setPixel(uint16_t x, uint16_t y, uint8_t mask, uint8_t color)
 {            
-    uint32_t uxnlocation = (y*512)+x;
+    uint32_t uxnlocation = (y*(512+16))+x;
     uint32_t uxnActualLocation = uxnlocation >> 1;
 
     // One byte contains two pixels due to ram limits.
     // one pixel has 2 bits for foreground, 2 for background. ffbb. Hence one byte contains ffbbffbb
-    if(layer)
+    // shitty hack to store 2 pixels per byte!
+    if(uxnlocation & 0x0001)
     {
-        color = color << 2;
-        // shitty hack to store 2 pixels per byte!
-        if(uxnlocation & 0x0001)
-        {
-            uxnbuf[uxnActualLocation] &= 0xF3; // clear lower 2 bits 0b11110011
-            uxnbuf[uxnActualLocation] += color; // set lower 2 bits
-        }
-        else
-        {
-            uxnbuf[uxnActualLocation] &= 0x3F; //0b00111111
-            uxnbuf[uxnActualLocation] += (color << 4); 
-        }
+        uxnbuf[uxnActualLocation] &= (0xF0+mask); // clear lower 2 bits
+        uxnbuf[uxnActualLocation] += color; // set lower 2 bits
     }
-    else 
+    else
     {
-        if(uxnlocation & 0x0001)
-        {
-            uxnbuf[uxnActualLocation] &= 0xFC;  //0b11111100
-            uxnbuf[uxnActualLocation] += color; 
-        }
-        else
-        {
-            uxnbuf[uxnActualLocation] &= 0xCF; //0b11001111
-            uxnbuf[uxnActualLocation] += (color << 4); 
-        }
+        uxnbuf[uxnActualLocation] &= ((mask<<4) + 0x0F); //0b00111111
+        uxnbuf[uxnActualLocation] += (color << 4); 
     }
 
     dirty_lines[y] = 1;
@@ -353,7 +336,7 @@ void core1_updateScreen()
             for(int x = 0; x < 640; ++x)
             {
                 uint8_t newcolor = 0;
-                uint32_t uxnlocation = (y*512)+x;
+                uint32_t uxnlocation = (y*(512+16))+x;
                 if(uxnlocation & 0x0001)
                 {
                     newcolor = uxnbuf[uxnlocation >> 1] & 0x0F;
