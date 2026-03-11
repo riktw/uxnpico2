@@ -12,9 +12,20 @@
 #include "hardware/structs/hstx_fifo.h"
 #include "hardware/structs/sio.h"
 
+#define FRAMEBUFFER_WIDTH 640
+#define FRAMEBUFFER_HEIGHT 360
 
-static char __attribute__((aligned(4), section(".ram_fb"))) framebuf[640*360] = {0};  //TODO: actual use a section?
-static char __attribute__((aligned(4), section(".ram_ub"))) uxnbuf[((512+16)*(360+16))/2] = {0};  //TODO: actual use a section?
+#define UXN_PADDING 16
+#define UXN_WIDTH (512 + UXN_PADDING)
+#define UXN_HEIGHT (320 + UXN_PADDING)
+
+static int uxnHeight = UXN_HEIGHT;
+static int uxnWidth = UXN_WIDTH;
+static int offsetHeight = (FRAMEBUFFER_HEIGHT - UXN_HEIGHT) / 2;
+static int offsetWidth = (FRAMEBUFFER_WIDTH - UXN_WIDTH) / 2;
+
+static char __attribute__((aligned(4), section(".ram_fb"))) framebuf[FRAMEBUFFER_HEIGHT * FRAMEBUFFER_WIDTH] = {0};
+static char __attribute__((aligned(4), section(".ram_ub"))) uxnbuf[(UXN_HEIGHT * UXN_WIDTH) / 2] = {0};
 static char dirty_lines[360] = {0};
 const char emptyline[640] = {0};
 static int inBlanking;
@@ -36,39 +47,37 @@ static int test = 1;
 #define SYNC_V1_H1 (TMDS_CTRL_11 | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
 
 #define MODE_H_SYNC_POLARITY 0
-#define MODE_H_FRONT_PORCH   16
-#define MODE_H_SYNC_WIDTH    96
-#define MODE_H_BACK_PORCH    48
+#define MODE_H_FRONT_PORCH 16
+#define MODE_H_SYNC_WIDTH 96
+#define MODE_H_BACK_PORCH 48
 #define MODE_H_ACTIVE_PIXELS 640
 
 #define MODE_V_SYNC_POLARITY 0
-#define MODE_V_FRONT_PORCH   10
-#define MODE_V_SYNC_WIDTH    2
-#define MODE_V_BACK_PORCH    33
-#define MODE_V_HIDDEN_FRONT  60
-#define MODE_V_ACTIVE_LINES  360
-#define MODE_V_HIDDEN_BACK   60
+#define MODE_V_FRONT_PORCH 10
+#define MODE_V_SYNC_WIDTH 2
+#define MODE_V_BACK_PORCH 33
+#define MODE_V_HIDDEN_FRONT 60
+#define MODE_V_ACTIVE_LINES 360
+#define MODE_V_HIDDEN_BACK 60
 
 #define CHAR_WIDTH 8
 #define CHAR_HEIGHT 12
 #define CHARS_PER_ROW (MODE_H_ACTIVE_PIXELS / CHAR_WIDTH)
 #define CHARS_PER_COLUMN (MODE_V_ACTIVE_LINES / CHAR_HEIGHT)
 
-#define MODE_H_TOTAL_PIXELS ( \
+#define MODE_H_TOTAL_PIXELS (                \
     MODE_H_FRONT_PORCH + MODE_H_SYNC_WIDTH + \
-    MODE_H_BACK_PORCH  + MODE_H_ACTIVE_PIXELS \
-)
-#define MODE_V_TOTAL_LINES  ( \
-    MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + \
-    MODE_V_BACK_PORCH  + MODE_V_HIDDEN_FRONT + \
-    MODE_V_ACTIVE_LINES + MODE_V_HIDDEN_BACK \
-)
+    MODE_H_BACK_PORCH + MODE_H_ACTIVE_PIXELS)
+#define MODE_V_TOTAL_LINES (                  \
+    MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH +  \
+    MODE_V_BACK_PORCH + MODE_V_HIDDEN_FRONT + \
+    MODE_V_ACTIVE_LINES + MODE_V_HIDDEN_BACK)
 
-#define HSTX_CMD_RAW         (0x0u << 12)
-#define HSTX_CMD_RAW_REPEAT  (0x1u << 12)
-#define HSTX_CMD_TMDS        (0x2u << 12)
+#define HSTX_CMD_RAW (0x0u << 12)
+#define HSTX_CMD_RAW_REPEAT (0x1u << 12)
+#define HSTX_CMD_TMDS (0x2u << 12)
 #define HSTX_CMD_TMDS_REPEAT (0x3u << 12)
-#define HSTX_CMD_NOP         (0xfu << 12)
+#define HSTX_CMD_NOP (0xfu << 12)
 
 // ----------------------------------------------------------------------------
 // HSTX command lists
@@ -83,8 +92,7 @@ static uint32_t vblank_line_vsync_off[] = {
     SYNC_V1_H0,
     HSTX_CMD_RAW_REPEAT | (MODE_H_BACK_PORCH + MODE_H_ACTIVE_PIXELS),
     SYNC_V1_H1,
-    HSTX_CMD_NOP
-};
+    HSTX_CMD_NOP};
 
 static uint32_t vblank_line_vsync_on[] = {
     HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
@@ -93,8 +101,7 @@ static uint32_t vblank_line_vsync_on[] = {
     SYNC_V0_H0,
     HSTX_CMD_RAW_REPEAT | (MODE_H_BACK_PORCH + MODE_H_ACTIVE_PIXELS),
     SYNC_V0_H1,
-    HSTX_CMD_NOP
-};
+    HSTX_CMD_NOP};
 
 static uint32_t vactive_line[] = {
     HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
@@ -105,8 +112,7 @@ static uint32_t vactive_line[] = {
     HSTX_CMD_NOP,
     HSTX_CMD_RAW_REPEAT | MODE_H_BACK_PORCH,
     SYNC_V1_H1,
-    HSTX_CMD_TMDS       | MODE_H_ACTIVE_PIXELS
-};
+    HSTX_CMD_TMDS | MODE_H_ACTIVE_PIXELS};
 
 // ----------------------------------------------------------------------------
 // DMA logic
@@ -126,7 +132,8 @@ static uint v_scanline = 2;
 // post the command list, and another to post the pixels.
 static bool vactive_cmdlist_posted = false;
 static bool framepong = false;
-void __scratch_x("") dma_irq_handler() {
+void __scratch_x("") dma_irq_handler()
+{
     // dma_pong indicates the channel that just finished, which is the one
     // we're about to reload.
     uint ch_num = dma_pong ? DMACH_PONG : DMACH_PING;
@@ -134,33 +141,40 @@ void __scratch_x("") dma_irq_handler() {
     dma_hw->intr = 1u << ch_num;
     dma_pong = !dma_pong;
 
-    if (v_scanline >= MODE_V_FRONT_PORCH && v_scanline < (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH)) {
+    if (v_scanline >= MODE_V_FRONT_PORCH && v_scanline < (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH))
+    {
         ch->read_addr = (uintptr_t)vblank_line_vsync_on;
         ch->transfer_count = count_of(vblank_line_vsync_on);
         inBlanking = 1;
-    } else if (v_scanline < MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH) {
+    }
+    else if (v_scanline < MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH)
+    {
         ch->read_addr = (uintptr_t)vblank_line_vsync_off;
         ch->transfer_count = count_of(vblank_line_vsync_off);
         inBlanking = 1;
-    } else if (!vactive_cmdlist_posted) {
+    }
+    else if (!vactive_cmdlist_posted)
+    {
         ch->read_addr = (uintptr_t)vactive_line;
         ch->transfer_count = count_of(vactive_line);
         vactive_cmdlist_posted = true;
-    } else {
+    }
+    else
+    {
         inBlanking = 0;
-        if(v_scanline >= (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH) && v_scanline < (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH + MODE_V_HIDDEN_BACK))
+        if (v_scanline >= (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH) && v_scanline < (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH + MODE_V_HIDDEN_BACK))
         {
             ch->read_addr = (uintptr_t)&emptyline[0];
             ch->transfer_count = MODE_H_ACTIVE_PIXELS / sizeof(uint32_t);
             vactive_cmdlist_posted = false;
         }
-        else if(v_scanline >= (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH + MODE_V_HIDDEN_BACK + MODE_V_ACTIVE_LINES))
+        else if (v_scanline >= (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH + MODE_V_HIDDEN_BACK + MODE_V_ACTIVE_LINES))
         {
             ch->read_addr = (uintptr_t)&emptyline[0];
             ch->transfer_count = MODE_H_ACTIVE_PIXELS / sizeof(uint32_t);
             vactive_cmdlist_posted = false;
         }
-        else 
+        else
         {
             ch->read_addr = (uintptr_t)&framebuf[(v_scanline - (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH + MODE_V_BACK_PORCH + MODE_V_HIDDEN_BACK)) * MODE_H_ACTIVE_PIXELS];
             ch->transfer_count = MODE_H_ACTIVE_PIXELS / sizeof(uint32_t);
@@ -168,21 +182,21 @@ void __scratch_x("") dma_irq_handler() {
         }
     }
 
-    if (!vactive_cmdlist_posted) {
+    if (!vactive_cmdlist_posted)
+    {
         v_scanline = (v_scanline + 1) % MODE_V_TOTAL_LINES;
     }
 }
 
-
 static void core1_main(void)
 {
     // Configure HSTX's TMDS encoder for RGB332
-   hstx_ctrl_hw->expand_tmds =
-        2  << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB |
-        0  << HSTX_CTRL_EXPAND_TMDS_L2_ROT_LSB   |
-        2  << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB |
-        29 << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB   |
-        1  << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB |
+    hstx_ctrl_hw->expand_tmds =
+        2 << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB |
+        0 << HSTX_CTRL_EXPAND_TMDS_L2_ROT_LSB |
+        2 << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB |
+        29 << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB |
+        1 << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB |
         26 << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
 
     // Pixels (TMDS) come in 4 8-bit chunks. Control symbols (RAW) are an
@@ -219,7 +233,8 @@ static void core1_main(void)
     // Assign clock pair to two neighbouring pins:
     hstx_ctrl_hw->bit[1] = HSTX_CTRL_BIT0_CLK_BITS;
     hstx_ctrl_hw->bit[0] = HSTX_CTRL_BIT0_CLK_BITS | HSTX_CTRL_BIT0_INV_BITS;
-    for (uint lane = 0; lane < 3; ++lane) {
+    for (uint lane = 0; lane < 3; ++lane)
+    {
         // For each TMDS lane, assign it to the correct GPIO pair based on the
         // desired pinout:
         static const int lane_to_output_bit[3] = {2, 4, 6};
@@ -227,14 +242,15 @@ static void core1_main(void)
         // Output even bits during first half of each HSTX cycle, and odd bits
         // during second half. The shifter advances by two bits each cycle.
         uint32_t lane_data_sel_bits =
-            (lane * 10    ) << HSTX_CTRL_BIT0_SEL_P_LSB |
+            (lane * 10) << HSTX_CTRL_BIT0_SEL_P_LSB |
             (lane * 10 + 1) << HSTX_CTRL_BIT0_SEL_N_LSB;
         // The two halves of each pair get identical data, but one pin is inverted.
         hstx_ctrl_hw->bit[bit + 1] = lane_data_sel_bits;
         hstx_ctrl_hw->bit[bit + 0] = lane_data_sel_bits | HSTX_CTRL_BIT0_INV_BITS;
     }
 
-    for (int i = 12; i <= 19; ++i) {
+    for (int i = 12; i <= 19; ++i)
+    {
         gpio_set_function(i, 0); // HSTX
     }
 
@@ -252,8 +268,7 @@ static void core1_main(void)
         &hstx_fifo_hw->fifo,
         vblank_line_vsync_off,
         count_of(vblank_line_vsync_off),
-        false
-    );
+        false);
     c = dma_channel_get_default_config(DMACH_PONG);
     channel_config_set_chain_to(&c, DMACH_PING);
     channel_config_set_dreq(&c, DREQ_HSTX);
@@ -263,8 +278,7 @@ static void core1_main(void)
         &hstx_fifo_hw->fifo,
         vblank_line_vsync_off,
         count_of(vblank_line_vsync_off),
-        false
-    );
+        false);
 
     dma_hw->ints0 = (1u << DMACH_PING) | (1u << DMACH_PONG);
     dma_hw->inte0 = (1u << DMACH_PING) | (1u << DMACH_PONG);
@@ -275,14 +289,13 @@ static void core1_main(void)
 
     dma_channel_start(DMACH_PING);
 
-
     while (1)
     {
-        if(inBlanking)
+        if (inBlanking)
         {
             core1_updateScreen();
             sleep_ms(5);
-        }   
+        }
     }
 }
 
@@ -295,7 +308,8 @@ void core1_setPalette(uint8_t color[4])
     palette[2] = color[2];
     palette[3] = color[3];
 
-    for(size_t i = 4; i < 16; ++i) {
+    for (size_t i = 4; i < 16; ++i)
+    {
         palette[i] = palette[i / 4];
     }
 }
@@ -305,39 +319,49 @@ void core1_setBackground(uint8_t color)
     memset(framebuf, palette[color], sizeof(framebuf));
 }
 
-void core1_setPixel(uint16_t x, uint16_t y, uint8_t mask, uint8_t color)
-{            
-    uint32_t uxnlocation = (y*(512+16))+x;
+void core1_setResolution(uint16_t height, uint16_t width)
+{
+    uxnHeight = height;
+    uxnWidth = width;
+    offsetHeight = (UXN_HEIGHT - height) / 2;
+    offsetWidth = (UXN_WIDTH - width) / 2;
+    memset(framebuf, 0, sizeof(framebuf));
+    memset(uxnbuf, 0x00, sizeof(uxnbuf));
+}
+
+void __not_in_flash_func(core1_setPixel)(uint16_t x, uint16_t y, uint8_t mask, uint8_t color)
+{
+    uint32_t uxnlocation = (y * (UXN_WIDTH)) + x;
     uint32_t uxnActualLocation = uxnlocation >> 1;
 
     // One byte contains two pixels due to ram limits.
     // one pixel has 2 bits for foreground, 2 for background. ffbb. Hence one byte contains ffbbffbb
     // shitty hack to store 2 pixels per byte!
-    if(uxnlocation & 0x0001)
+    if (uxnlocation & 0x0001)
     {
-        uxnbuf[uxnActualLocation] &= (0xF0+mask); // clear lower 2 bits
-        uxnbuf[uxnActualLocation] += color; // set lower 2 bits
+        uxnbuf[uxnActualLocation] &= (0xF0 + mask); // clear lower 2 bits
+        uxnbuf[uxnActualLocation] += color;         // set lower 2 bits
     }
     else
     {
-        uxnbuf[uxnActualLocation] &= ((mask<<4) + 0x0F); //0b00111111
-        uxnbuf[uxnActualLocation] += (color << 4); 
+        uxnbuf[uxnActualLocation] &= ((mask << 4) + 0x0F); // 0b00111111
+        uxnbuf[uxnActualLocation] += (color << 4);
     }
 
     dirty_lines[y] = 1;
 }
 
-void core1_updateScreen()
+void __not_in_flash_func(core1_updateScreen)()
 {
-    for(int y = 0; y < 360; ++y)
+    for (int y = offsetHeight; y < uxnHeight; ++y)
     {
-        if(dirty_lines[y])
+        if (dirty_lines[y])
         {
-            for(int x = 0; x < 640; ++x)
+            for (int x = offsetWidth; x < uxnWidth; ++x)
             {
                 uint8_t newcolor = 0;
-                uint32_t uxnlocation = (y*(512+16))+x;
-                if(uxnlocation & 0x0001)
+                uint32_t uxnlocation = (y * (UXN_WIDTH)) + x;
+                if (uxnlocation & 0x0001)
                 {
                     newcolor = uxnbuf[uxnlocation >> 1] & 0x0F;
                 }
@@ -345,7 +369,7 @@ void core1_updateScreen()
                 {
                     newcolor = (uxnbuf[uxnlocation >> 1] >> 4) & 0x0F;
                 }
-                uint32_t location = (y*640)+x;
+                uint32_t location = (y * FRAMEBUFFER_WIDTH) + x;
                 framebuf[location] = palette[newcolor];
             }
             dirty_lines[y] = 0;
@@ -364,5 +388,5 @@ void core1_init(void)
     memset(uxnbuf, 0x00, sizeof(uxnbuf));
     memset(dirty_lines, 0x00, sizeof(dirty_lines));
     bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS + BUSCTRL_BUS_PRIORITY_DMA_R_BITS;
-	multicore_launch_core1(core1_main);
+    multicore_launch_core1(core1_main);
 }

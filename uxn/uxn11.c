@@ -19,7 +19,7 @@ WITH REGARD TO THIS SOFTWARE.
 cc -DNDEBUG -O2 -g0 -s src/uxn11.c -lX11 -lutil -o bin/uxn11
 */
 
-static Uint8 ram[0x10000], dev[0x100], stk[2][0x100], ptr[2];
+Uint8 ram[0x10000], dev[0x100], stk[2][0x100], ptr[2];
 static int console_vector, screen_vector, controller_vector, mouse_vector;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
 
@@ -29,12 +29,6 @@ static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
 #define BANKS_CAP BANKS * 0x10000
 #define WIDTH (64 * 8)
 #define HEIGHT (45 * 8)
-
-#define CLAMP(v, a, b) { if(v < a) v = a; else if(v >= b) v = b; }
-#define TWOS(v) (v & 0x8000 ? (int)v - 0x10000 : (int)v)
-
-static inline Uint16 peek2(const Uint8 *d) { return ((Uint16)d[0] << 8) | d[1]; }
-static inline void poke2(Uint8 *d, Uint16 v) { d[0] = v >> 8, d[1] = v; }
 
 /* clang-format on */
 
@@ -70,7 +64,7 @@ static unsigned int system_boot(char *rom_path, const unsigned int has_args)
 {
 	system_boot_path = rom_path;
 	dev[0x17] = has_args;
-	return 0;//ram;// && system_load(rom_path);
+	return 0; // ram;// && system_load(rom_path);
 }
 
 static unsigned int system_reboot(const unsigned int soft)
@@ -78,7 +72,7 @@ static unsigned int system_reboot(const unsigned int soft)
 	memset(dev, 0, 0x100);
 	memset(stk[0], 0, 0x100);
 	memset(stk[1], 0, 0x100);
-	if(soft)
+	if (soft)
 		memset(ram + 0x100, 0, 0xff00);
 	else
 		memset(ram, 0, 0x10000);
@@ -108,9 +102,11 @@ static void system_deo_rst(void) { ptr[1] = dev[5]; }
 
 static unsigned int console_input(int c, unsigned int type)
 {
-	if(c == EOF) c = 0, type = CONSOLE_END;
+	if (c == EOF)
+		c = 0, type = CONSOLE_END;
 	dev[0x12] = c, dev[0x17] = type;
-	if(console_vector) uxn_eval(console_vector);
+	if (console_vector)
+		uxn_eval(console_vector);
 	return type != CONSOLE_END;
 }
 
@@ -128,217 +124,17 @@ static void console_deo_stderr(void) { putchar(dev[0x19]); }
 
 /*
 @|Screen ------------------------------------------------------------ */
-#include "../core1.h"
-static int screen_zoom = 1, screen_reqsize, screen_reqdraw;
-static int screen_width, screen_height, screen_wmar2, screen_hmar2;
-static int screen_x1, screen_y1, screen_x2, screen_y2;
-
-static const Uint8 blend_lut[16][2][4] = {
-	{{0, 0, 1, 2}, {0, 0, 4, 8}},
-	{{0, 1, 2, 3}, {0, 4, 8, 12}},
-	{{0, 2, 3, 1}, {0, 8, 12, 4}},
-	{{0, 3, 1, 2}, {0, 12, 4, 8}},
-	{{1, 0, 1, 2}, {4, 0, 4, 8}},
-	{{1, 1, 2, 3}, {4, 4, 8, 12}},
-	{{1, 2, 3, 1}, {4, 8, 12, 4}},
-	{{1, 3, 1, 2}, {4, 12, 4, 8}},
-	{{2, 0, 1, 2}, {8, 0, 4, 8}},
-	{{2, 1, 2, 3}, {8, 4, 8, 12}},
-	{{2, 2, 3, 1}, {8, 8, 12, 4}},
-	{{2, 3, 1, 2}, {8, 12, 4, 8}},
-	{{3, 0, 1, 2}, {12, 0, 4, 8}},
-	{{3, 1, 2, 3}, {12, 4, 8, 12}},
-	{{3, 2, 3, 1}, {12, 8, 12, 4}},
-	{{3, 3, 1, 2}, {12, 12, 4, 8}}};
-
-static const Uint8 alpha_lut[16] = {0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0};
-
-static void screen_change(const int x1, const int y1, const int x2, const int y2)
-{
-	screen_x1 = x1 < screen_x1 ? x1 : screen_x1;
-	screen_y1 = y1 < screen_y1 ? y1 : screen_y1;
-	screen_x2 = x2 > screen_x2 ? x2 : screen_x2;
-	screen_y2 = y2 > screen_y2 ? y2 : screen_y2;
-}
-
-static void system_deo_colorize(void)
-{
-    uint8_t colors[4];
-    for(size_t i = 0; i < 4; ++i) 
-    {
-        Uint8 r = ((dev[0x8 + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
-        Uint8 g = ((dev[0xa + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
-        Uint8 b = ((dev[0xc + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
-
-        colors[i] = ((r & 0xE0) + ((g & 0xE0) >> 3) + ((b & 0xC0) >> 6));
-    }
-    core1_setPalette(colors);
-    core1_setBackground(0);
-}
-
-static void screen_resize(int width, int height)
-{
-	if(width != screen_width || height != screen_height) {
-		screen_width = width, screen_wmar2 = width + 0x10;
-		poke2(&dev[0x22], screen_width);
-		screen_height = height, screen_hmar2 = height + 0x10;
-		poke2(&dev[0x24], screen_height);
-		screen_reqsize = screen_reqdraw = 1;
-	}
-}
-
-/*
-static void screen_redraw(void)
-{
-	if(screen_zoom == 1) {
-		const int colmar = (screen_y1 + 8) * screen_wmar2 + (screen_x1 + 8);
-		const int row_width = screen_x2 - screen_x1;
-		const int src_stride = screen_wmar2 - row_width;
-		const int dst_stride = screen_width - row_width;
-		int y, *dst_ptr = &screen_pixels[screen_y1 * screen_width + screen_x1];
-		Uint8 *src_ptr = &screen_layers[colmar];
-		for(y = screen_y1; y < screen_y2; y++) {
-			int *dst_end = dst_ptr + row_width;
-			while(dst_ptr < dst_end)
-				*dst_ptr++ = screen_palette[*src_ptr++];
-			dst_ptr += dst_stride;
-			src_ptr += src_stride;
-		}
-	} else {
-		int x, y, i, k, l;
-		const int stride = screen_width * screen_zoom;
-		for(y = screen_y1; y < screen_y2; y++) {
-			const int ys = y * screen_zoom;
-			for(x = screen_x1, i = (x + 8) + (y + 8) * screen_wmar2; x < screen_x2; x++, i++) {
-				const int c = screen_palette[screen_layers[i]];
-				for(k = 0; k < screen_zoom; k++) {
-					const int oo = (ys + k) * stride + x * screen_zoom;
-					for(l = 0; l < screen_zoom; l++)
-						screen_pixels[oo + l] = c;
-				}
-			}
-		}
-	}
-	emu_redraw();
-	screen_x1 = screen_y1 = screen_x2 = screen_y2 = screen_reqdraw = 0;
-}
-*/
+#include "devices/screen.h"
 
 void screen_update(void)
 {
-	if(screen_vector)
+	screen_vector = screen_get_vector();
+	if (screen_vector)
+	{
 		uxn_eval(screen_vector);
-	if(screen_reqsize) {
-
 	}
-	if(screen_reqdraw) {
-		screen_x1 = screen_y1 = 0;
-		screen_x2 = screen_width;
-		screen_y2 = screen_height;
-		core1_updateScreen();
-	} else if(screen_x2 > screen_x1 && screen_y2 > screen_y1) {
-		CLAMP(screen_x1, 0, screen_width);
-		CLAMP(screen_y1, 0, screen_height);
-		CLAMP(screen_x2, 0, screen_width);
-		CLAMP(screen_y2, 0, screen_height);
-		core1_updateScreen();
-	}
+	screen_run_update();
 }
-
-static void screen_deo_pixel(void)
-{
-	const int ctrl = dev[0x2e];
-	const int hi = ctrl & 0x40;
-	const Uint8 mask = hi ? 0x3 : 0xc;
-	const Uint8 color = hi ? ((ctrl & 0x3) << 2) : (ctrl & 0x3);
-	// fill mode 
-	if(ctrl & 0x80) {
-		int px;
-		const int x1 = (ctrl & 0x10) ? 8 : rX + 8;
-		const int x2 = (ctrl & 0x10) ? rX : screen_width;
-		const int y1 = (ctrl & 0x20) ? 8 : rY + 8;
-		const int y2 = (ctrl & 0x20) ? rY : screen_height;
-		const int hor = (x2 + 8) - x1;
-		const int ver = (y2 + 8) - y1;
-		//TODO: fill mode
-		/*
-		Uint8 *row = &screen_layers[y1 * screen_wmar2 + x1];
-		Uint8 *end = row + ver * screen_wmar2;
-		for(; row < end; row += screen_wmar2) {
-			Uint8 *dst = row;
-			for(px = 0; px < hor; px++)
-				dst[px] = (dst[px] & mask) | color;
-		}
-		*/
-		screen_reqdraw = 1;
-	}
-	// pixel mode 
-	else {
-		const Uint16 x = rX, y = rY;
-		if(x < screen_width && y < screen_height) {
-			//Uint8 *dst = &screen_layers[(y + 8) * screen_wmar2 + (x + 8)];
-			//*dst = (*dst & mask) | color;  //TODO: apply mask
-			core1_setPixel(x+8, y+8, mask, color);
-			screen_reqdraw = 1;
-		}
-		if(rMX) rX++;
-		if(rMY) rY++;
-	}
-}
-
-static void screen_deo_sprite(void)
-{
-	int i, j, x = rX, y = rY;
-	const int ctrl = dev[0x2f];
-	const int flipx = ctrl & 0x10, dx = flipx ? -rDY : rDY;
-	const int flipy = ctrl & 0x20, dy = flipy ? -rDX : rDX;
-	const int row_start = flipx ? 0 : 7, row_delta = flipx ? 1 : -1;
-	const int col_start = flipy ? 7 : 0, col_delta = flipy ? -1 : 1;
-	const int layer = ctrl & 0x40, layer_mask = layer ? 0x3 : 0xc;
-	const int mode_2bpp = ctrl >> 7, addr_2bpp = mode_2bpp ? rMA << 2 : rMA << 1;
-	const int blend = ctrl & 0xf;
-	const Uint8 opaque = alpha_lut[blend], *table = blend_lut[blend][layer >> 6];
-	for(i = 0; i <= rML; i++, x += dx, y += dy, rA += addr_2bpp) {
-		const Uint16 x0 = x + 8, y0 = y + 8;
-		if(x0 + 8 >= screen_wmar2 || y0 + 8 >= screen_hmar2) continue;
-		const Uint8 *col = &ram[rA + col_start];
-		for(j = 0; j < 8; j++, col += col_delta) {
-			const int ch1 = *col, ch2 = mode_2bpp ? col[8] : 0;
-			for(int k = 0, row = row_start; k < 8; k++, row += row_delta) {
-				const int color = ((ch1 >> row) & 1) | (((ch2 >> row) & 1) << 1);
-				if(opaque || color)
-				{
-					core1_setPixel(x0+k, y0+j, layer_mask, table[color]);
-				}
-			}
-		}
-	}
-	if(!screen_reqdraw) {
-		int x1 = flipx ? x : rX, x2 = flipx ? rX : x;
-		int y1 = flipy ? y : rY, y2 = flipy ? rY : y;
-		screen_change(x1 - 8, y1 - 8, x2 + 8, y2 + 8);
-	}
-	if(rMX) rX += flipx ? -rDX : rDX;
-	if(rMY) rY += flipy ? -rDY : rDY;
-}
-
-/* clang-format off */
-
-static Uint8 screen_dei_rxhb(void) { return rX >> 8; }
-static Uint8 screen_dei_rxlb(void) { return rX; }
-static Uint8 screen_dei_ryhb(void) { return rY >> 8; }
-static Uint8 screen_dei_rylb(void) { return rY; }
-static Uint8 screen_dei_rahb(void) { return rA >> 8; }
-static Uint8 screen_dei_ralb(void) { return rA; }
-static void screen_deo_vector(void) { screen_vector = peek2(&dev[0x20]); }
-static void screen_deo_width(void) { /*screen_resize(peek2(&dev[0x22]) & 0xfff, screen_height & 0xfff);*/ }
-static void screen_deo_height(void) { /*screen_resize(screen_width & 0xfff, peek2(&dev[0x24]) & 0xfff);*/ }
-static void screen_deo_auto(void) { rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; }
-static void screen_deo_x(void) { rX = (dev[0x28] << 8) | dev[0x29], rX = TWOS(rX); }
-static void screen_deo_y(void) { rY = (dev[0x2a] << 8) | dev[0x2b], rY = TWOS(rY); }
-static void screen_deo_addr(void) { rA = (dev[0x2c] << 8) | dev[0x2d]; }
-
-/* clang-format on */
 
 /*
 @|Controller -------------------------------------------------------- */
@@ -415,16 +211,11 @@ void mouse_deo_vector(void)
 
 #include "devices/file.h"
 
-static UxnFile ufs[2];
+
 
 /* clang-format off */
 
-static void filea_deo_stat(void)   { poke2(&dev[0xa2], file_stat(&ufs[0], &ram[peek2(&dev[0xa4])], rL1)); }   
-static void filea_deo_delete(void) { poke2(&dev[0xa2], file_delete(&ufs[0])); }
-static void filea_deo_name(void)   { poke2(&dev[0xa2], file_init(&ufs[0], (char *)&ram[peek2(&dev[0xa8])])); }
-static void filea_deo_length(void) { rL1 = peek2(&dev[0xaa]); }
-static void filea_deo_read(void)   { poke2(&dev[0xa2], file_read(&ufs[0], &ram[peek2(&dev[0xac])], rL1)); }
-static void filea_deo_write(void)  { poke2(&dev[0xa2], file_write(&ufs[0], &ram[peek2(&dev[0xae])], rL1, dev[0xa7])); }
+
 //static void fileb_deo_stat(void) { poke2(&dev[0xb2], file_stat(1, peek2(&dev[0xb4]), rL2)); }
 //static void fileb_deo_delete(void) { poke2(&dev[0xb2], file_delete(1)); }
 //static void fileb_deo_name(void) { poke2(&dev[0xb2], file_init(1, peek2(&dev[0xb8]))); }
@@ -436,34 +227,7 @@ static void filea_deo_write(void)  { poke2(&dev[0xa2], file_write(&ufs[0], &ram[
 
 /*
 @|Datetime ---------------------------------------------------------- */
-#include <time.h>
-time_t seconds = 0;
-struct tm *datetime_t;
-
-void SecondPasssed()
-{
-	seconds++;
-}
-
-void datetime_update()
-{
-	struct tm *t = localtime(&seconds);
-	datetime_t = t;
-}
-
-/* clang-format off */
-
-static Uint8 datetime_dei_yhb(void) { datetime_update(); return (datetime_t->tm_year + 1900) >> 8; }
-static Uint8 datetime_dei_ylb(void) { datetime_update(); return (datetime_t->tm_year + 1900); }
-static Uint8 datetime_dei_mon(void) { datetime_update(); return datetime_t->tm_mon; }
-static Uint8 datetime_dei_day(void) { datetime_update(); return datetime_t->tm_mday; }
-static Uint8 datetime_dei_hou(void) { datetime_update(); return datetime_t->tm_hour; }
-static Uint8 datetime_dei_min(void) { datetime_update(); return datetime_t->tm_min; }
-static Uint8 datetime_dei_sec(void) { datetime_update(); return datetime_t->tm_sec; }
-static Uint8 datetime_dei_wday(void) { datetime_update(); return datetime_t->tm_wday; }
-static Uint8 datetime_dei_ydayhb(void) { datetime_update(); return datetime_t->tm_yday >> 8; }
-static Uint8 datetime_dei_ydaylb(void) { datetime_update(); return datetime_t->tm_yday; }
-static Uint8 datetime_dei_dst(void) { datetime_update(); return datetime_t->tm_isdst; }
+#include "devices/datetime.h"
 
 /* clang-format on */
 
@@ -527,12 +291,12 @@ static const deo_handler deo_handlers[256] = {
 	[0xab] = filea_deo_length,
 	[0xad] = filea_deo_read,
 	[0xaf] = filea_deo_write};
-	//[0xb5] = fileb_deo_stat,
-	//[0xb6] = fileb_deo_delete,
-	//[0xb9] = fileb_deo_name,
-	//[0xbb] = fileb_deo_length,
-	//[0xbd] = fileb_deo_read,
-	//[0xbf] = fileb_deo_write};
+//[0xb5] = fileb_deo_stat,
+//[0xb6] = fileb_deo_delete,
+//[0xb9] = fileb_deo_name,
+//[0xbb] = fileb_deo_length,
+//[0xbd] = fileb_deo_read,
+//[0xbf] = fileb_deo_write};
 
 static inline Uint8 emu_dei(const Uint8 port)
 {
@@ -544,7 +308,8 @@ static inline void emu_deo(const Uint8 port, const Uint8 value)
 {
 	deo_handler h = deo_handlers[port];
 	dev[port] = value;
-	if(h) h();
+	if (h)
+		h();
 }
 
 /* clang-format off */
@@ -571,7 +336,7 @@ static inline void emu_deo(const Uint8 port, const Uint8 value)
 #define POK(o,v,m) ram[o] = v[0]; if(d) ram[(o + 1) & m] = v[1];
 #define PEK(i,v,m) v[0] = ram[i]; if(d) v[1] = ram[(i + 1) & m]; PUT(v,r)
 
-unsigned int __not_in_flash("") uxn_eval(Uint16 pc)
+unsigned int __not_in_flash_func(uxn_eval)(Uint16 pc)
 {
 	unsigned int a, b, c, x[2], y[2], z[2];
 	while(1)
@@ -802,7 +567,7 @@ static void emu_run(void)
 	fds[1].fd = emu_timer, fds[1].events = POLLIN;
 	fds[2].fd = STDIN_FILENO, fds[2].events = POLLIN | POLLHUP;
 	while(!dev[0x0f]) {
-		// only poll stdin while it's still active 
+		// only poll stdin while it's still active
 		if(poll(fds, stdin_active ? 3 : 2, -1) <= 0)
 			continue;
 		while(XPending(emu_dpy))

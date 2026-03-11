@@ -5,20 +5,21 @@
 
 #include "core1.h"
 
-#include "uxn/src/uxn11.h"
+#include "uxn/uxn11.h"
 
 static void run()
 {
     static int counter = 0;
-        //int c = getchar_timeout_us(16667);
-        //if(c >= 0)
-        //    console_input(u, (Uint8)c);
-    while(1)
+    // int c = getchar_timeout_us(16667);
+    // if(c >= 0)
+    //     console_input(u, (Uint8)c);
+    while (1)
     {
         sleep_us(16667);
         screen_update();
         counter++;
-        if(counter >= 60) {
+        if (counter >= 60)
+        {
             SecondPasssed();
             counter = 0;
         }
@@ -33,15 +34,16 @@ int main()
 
     uxn_load_rom("catclock.rom");
 
-	if(!uxn_eval(PAGE_PROGRAM))
+    if (!uxn_eval(PAGE_PROGRAM))
     {
-		printf("Init Failed\n");
+        printf("Init Failed\n");
     }
 
-	run();
+    run();
 
-    //unmount();
-    while (true) {
+    // unmount();
+    while (true)
+    {
         sleep_ms(1000);
     }
 }

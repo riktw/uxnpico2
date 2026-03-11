@@ -5,6 +5,7 @@
 
 void core1_setPalette(uint8_t color[4]);
 void core1_setBackground(uint8_t color);
+void core1_setResolution(uint16_t height, uint16_t width);
 void core1_setPixel(uint16_t x, uint16_t y, uint8_t mask, uint8_t color);
 void core1_init(void);
 void core1_updateScreen();
