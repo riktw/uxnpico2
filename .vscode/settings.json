@@ -15,6 +15,7 @@
     "cmake.configureOnEdit": false,
     "cmake.automaticReconfigure": false,
     "cmake.configureOnOpen": false,
+    "editor.formatOnSave": true,
     "cmake.generator": "Ninja",
     "cmake.cmakePath": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
     "C_Cpp.debugShortcut": false,
@@ -37,5 +38,5 @@
     "raspberry-pi-pico.useCmakeTools": false,
     "raspberry-pi-pico.cmakePath": "${HOME}/.pico-sdk/cmake/v3.31.5/bin/cmake",
     "raspberry-pi-pico.ninjaPath": "${HOME}/.pico-sdk/ninja/v1.12.1/ninja",
-    "cortex-debug.variableUseNaturalFormat": true
+    "cortex-debug.variableUseNaturalFormat": false
 }

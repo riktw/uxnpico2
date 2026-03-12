@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "pico/stdlib.h"
+#include "hardware/clocks.h"
+#include "hardware/vreg.h"
 
 #include "core1.h"
 
@@ -28,11 +30,15 @@ static void run()
 
 int main()
 {
+    // Set system clock to 252 MHz for HSTX timing
+    vreg_set_voltage(VREG_VOLTAGE_1_20);
+    set_sys_clock_khz(252000, true);
+
     stdio_init_all();
 
-    core1_init();
-
     uxn_load_rom("catclock.rom");
+
+    core1_init();
 
     if (!uxn_eval(PAGE_PROGRAM))
     {

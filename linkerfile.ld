@@ -270,7 +270,7 @@ SECTIONS
     } > SCRATCH_X
     .stack_dummy (NOLOAD):
     {
-        KEEP(*(.stack*))
+        *(.stack*)
     } > SCRATCH_Y
 
     .flash_end : {

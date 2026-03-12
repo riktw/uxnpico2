@@ -43,14 +43,15 @@ static void screen_change(const int x1, const int y1, const int x2, const int y2
 
 void system_deo_colorize(void)
 {
-	uint8_t colors[4];
+	uint16_t colors[4];
 	for (size_t i = 0; i < 4; ++i)
 	{
-		Uint8 r = ((dev[0x8 + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
-		Uint8 g = ((dev[0xa + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
-		Uint8 b = ((dev[0xc + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
+		uint8_t r = ((dev[0x8 + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
+		uint8_t g = ((dev[0xa + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
+		uint8_t b = ((dev[0xc + i / 2] >> (!(i % 2) << 2)) & 0x0f) * 0x11;
 
-		colors[i] = ((r & 0xE0) + ((g & 0xE0) >> 3) + ((b & 0xC0) >> 6));
+		// RGB565
+		colors[i] = (((r & 0xF8) << 8) + ((g & 0xFC) << 3) + ((b & 0xF8) >> 3));
 	}
 	core1_setPalette(colors);
 	core1_setBackground(0);
@@ -84,7 +85,6 @@ void screen_run_update(void)
 		screen_x1 = screen_y1 = 0;
 		screen_x2 = screen_width;
 		screen_y2 = screen_height;
-		core1_updateScreen();
 	}
 	else if (screen_x2 > screen_x1 && screen_y2 > screen_y1)
 	{
@@ -92,7 +92,6 @@ void screen_run_update(void)
 		CLAMP(screen_y1, 0, screen_height);
 		CLAMP(screen_x2, 0, screen_width);
 		CLAMP(screen_y2, 0, screen_height);
-		core1_updateScreen();
 	}
 }
 
