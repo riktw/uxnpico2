@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#define UXN_PADDING 16
+#define UXN_WIDTH (640)
+#define UXN_HEIGHT (480)
+
 void core1_setPalette(uint16_t color[4]);
 void core1_setBackground(uint8_t color);
 void core1_setResolution(uint16_t height, uint16_t width);

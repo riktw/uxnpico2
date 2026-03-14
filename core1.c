@@ -12,20 +12,13 @@
 #include "pico_hdmi/hstx_packet.h"
 #include "pico_hdmi/video_output.h"
 
-#define UXN_PADDING 16
-#define UXN_WIDTH (640)
-#define UXN_HEIGHT (360)
-
 static int uxnHeight = UXN_HEIGHT;
 static int uxnWidth = UXN_WIDTH;
 
 static char __attribute__((aligned(4), section(".ram_fb"))) uxnbuf[(UXN_HEIGHT * UXN_WIDTH) / 2] = {0};
-static char dirty_lines[360] = {0};
-const char emptyline[640] = {0};
-static int inBlanking;
 
+// Precalculate a 256 entry LUT for doing 2 pixels in one go!
 static uint32_t __scratch_x("pallete") palette[256];
-
 void core1_setPalette(uint16_t color[4])
 {
     palette[0] = color[0];
@@ -65,12 +58,11 @@ void core1_setPalette(uint16_t color[4])
 
 void core1_setBackground(uint8_t color)
 {
+    memset(uxnbuf, (color << 4) | color, sizeof(uxnbuf));
 }
 
 void core1_setResolution(uint16_t height, uint16_t width)
 {
-    uxnHeight = height;
-    uxnWidth = width;
     memset(uxnbuf, 0x00, sizeof(uxnbuf));
 }
 
@@ -84,13 +76,13 @@ void core1_setPixel(uint16_t x, uint16_t y, uint8_t mask, uint8_t color)
     // shitty hack to store 2 pixels per byte!
     if (uxnlocation & 0x0001)
     {
-        uxnbuf[uxnActualLocation] &= (0xF0 + mask); // clear lower 2 bits
-        uxnbuf[uxnActualLocation] += color;         // set lower 2 bits
+        uxnbuf[uxnActualLocation] &= ((mask << 4) + 0x0F);
+        uxnbuf[uxnActualLocation] += (color << 4);
     }
     else
     {
-        uxnbuf[uxnActualLocation] &= ((mask << 4) + 0x0F); // 0b00111111
-        uxnbuf[uxnActualLocation] += (color << 4);
+        uxnbuf[uxnActualLocation] &= (0xF0 + mask);
+        uxnbuf[uxnActualLocation] += color;
     }
 }
 
@@ -98,29 +90,11 @@ void __scratch_x("") scanline_callback(uint32_t v_scanline, uint32_t active_line
 {
     (void)v_scanline;
 
-    if (active_line < 60)
+    uint32_t uxnlocationStart = ((active_line) * (UXN_WIDTH)) / 2;
+    for (int i = 0; i < UXN_WIDTH / 2; ++i)
     {
-        for (int i = 0; i < 320; ++i)
-        {
-            dst[i] = 0x00000000;
-        }
-    }
-    else if (active_line > (60 + 360))
-    {
-        for (int i = 0; i < 320; ++i)
-        {
-            dst[i] = 0x00000000;
-        }
-    }
-    else
-    {
-        uint32_t uxnlocationStart = ((active_line - 60) * (UXN_WIDTH)) / 2;
-        for (int i = 0; i < UXN_WIDTH / 2; ++i)
-        {
-            uint8_t pixels = uxnbuf[uxnlocationStart + i];
-            uint8_t pixels2 = (((pixels & 0x0F) << 4) | ((pixels & 0xF0) >> 4));
-            dst[i] = palette[(pixels2)];
-        }
+        uint8_t pixels = uxnbuf[uxnlocationStart + i];
+        dst[i] = palette[(pixels)];
     }
 }
 

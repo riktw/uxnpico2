@@ -11,6 +11,7 @@ extern Uint8 dev[0x100];
 
 static int screen_zoom = 1, screen_reqsize, screen_reqdraw;
 static int screen_width, screen_height, screen_wmar2, screen_hmar2;
+static int screen_width_offset, screen_height_offset;
 static int screen_x1, screen_y1, screen_x2, screen_y2;
 
 static const Uint8 blend_lut[16][2][4] = {
@@ -67,6 +68,9 @@ void screen_resize(int width, int height)
 		poke2(&dev[0x24], screen_height);
 		core1_setResolution(screen_hmar2, screen_wmar2);
 		screen_reqsize = screen_reqdraw = 1;
+
+		screen_width_offset = (UXN_WIDTH - screen_width) / 2;
+		screen_height_offset = (UXN_HEIGHT - screen_height) / 2;
 	}
 }
 
@@ -129,7 +133,7 @@ void screen_deo_pixel(void)
 		const Uint16 x = rX, y = rY;
 		if (x < screen_width && y < screen_height)
 		{
-			core1_setPixel(x + 8, y + 8, mask, color);
+			core1_setPixel(x + (UXN_PADDING / 2) + screen_width_offset, y + (UXN_PADDING / 2) + screen_height_offset, mask, color);
 			screen_reqdraw = 1;
 		}
 		if (rMX)
@@ -165,7 +169,7 @@ void screen_deo_sprite(void)
 				const int color = ((ch1 >> row) & 1) | (((ch2 >> row) & 1) << 1);
 				if (opaque || color)
 				{
-					core1_setPixel(x0 + k, y0 + j, layer_mask, table[color]);
+					core1_setPixel(x0 + k + +screen_width_offset, y0 + j + screen_height_offset, layer_mask, table[color]);
 				}
 			}
 		}
@@ -195,8 +199,8 @@ Uint8 screen_dei_rylb(void) { return rY; }
 Uint8 screen_dei_rahb(void) { return rA >> 8; }
 Uint8 screen_dei_ralb(void) { return rA; }
 void screen_deo_vector(void) { screen_vector = peek2(&dev[0x20]); }
-void screen_deo_width(void) { /*screen_resize(peek2(&dev[0x22]) & 0xfff, screen_height & 0xfff);*/ }
-void screen_deo_height(void) { /*screen_resize(screen_width & 0xfff, peek2(&dev[0x24]) & 0xfff);*/ }
+void screen_deo_width(void) { screen_resize(peek2(&dev[0x22]) & 0xfff, screen_height & 0xfff); }
+void screen_deo_height(void) { screen_resize(screen_width & 0xfff, peek2(&dev[0x24]) & 0xfff); }
 void screen_deo_auto(void) { rMX = dev[0x26] & 0x1, rMY = dev[0x26] & 0x2, rMA = dev[0x26] & 0x4, rML = dev[0x26] >> 4, rDX = rMX << 3, rDY = rMY << 2; }
 void screen_deo_x(void) { rX = (dev[0x28] << 8) | dev[0x29], rX = TWOS(rX); }
 void screen_deo_y(void) { rY = (dev[0x2a] << 8) | dev[0x2b], rY = TWOS(rY); }
