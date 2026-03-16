@@ -6,6 +6,7 @@
 #include "hardware/vreg.h"
 
 #include "core1.h"
+#include "ps2_keyboard.h"
 
 #include "uxn/uxn11.h"
 
@@ -13,11 +14,16 @@ static void run()
 {
     static int counter = 0;
     // int c = getchar_timeout_us(16667);
-    // if(c >= 0)
+    // if (c >= 0)
     //     console_input(u, (Uint8)c);
     while (1)
     {
         sleep_us(16667);
+        char c = ps2GetChar();
+        if (c)
+        {
+            printf("%c", c);
+        }
         screen_update();
         counter++;
         if (counter >= 60)
@@ -40,6 +46,8 @@ int main()
 
     core1_init();
 
+    initPS2();
+
     if (!uxn_eval(PAGE_PROGRAM))
     {
         printf("Init Failed\n");
@@ -48,6 +56,7 @@ int main()
     run();
 
     // unmount();
+
     while (true)
     {
         sleep_ms(1000);

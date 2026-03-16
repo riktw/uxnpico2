@@ -18,7 +18,7 @@ static int uxnWidth = UXN_WIDTH;
 static char __attribute__((aligned(4), section(".ram_fb"))) uxnbuf[(UXN_HEIGHT * UXN_WIDTH) / 2] = {0};
 
 // Precalculate a 256 entry LUT for doing 2 pixels in one go!
-static uint32_t __scratch_x("pallete") palette[256];
+static uint32_t palette[256];
 void core1_setPalette(uint16_t color[4])
 {
     palette[0] = color[0];
