@@ -13,6 +13,7 @@
 static void run()
 {
     static int counter = 0;
+    static char previousControllerButton = 0;
     // int c = getchar_timeout_us(16667);
     // if (c >= 0)
     //     console_input(u, (Uint8)c);
@@ -22,7 +23,17 @@ static void run()
         char c = ps2GetChar();
         if (c)
         {
-            printf("%c", c);
+            controller_key(c);
+            previousControllerButton = ps2GetController(c);
+            controller_down(previousControllerButton);
+        }
+        else
+        {
+            if (ps2IsReleased())
+            {
+                controller_up(previousControllerButton);
+            }
+            previousControllerButton = 0;
         }
         screen_update();
         counter++;
@@ -42,7 +53,7 @@ int main()
 
     stdio_init_all();
 
-    uxn_load_rom("catclock.rom");
+    uxn_load_rom("CCCC.rom");
 
     core1_init();
 

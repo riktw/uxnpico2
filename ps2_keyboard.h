@@ -22,6 +22,7 @@ void initPS2(void);
 unsigned char ps2GetChar();
 unsigned char ps2GetCharBlk();
 void clearPS2(void);
-void ps2Task();
+uint8_t ps2IsReleased();
+uint8_t ps2GetController(char c);
 
 #endif // P2_KEYBOARD_H_

@@ -138,38 +138,43 @@ void screen_update(void)
 
 /*
 @|Controller -------------------------------------------------------- */
-/*
-static void controller_down(Uint8 mask)
+
+void controller_down(Uint8 mask)
 {
-	if(mask) {
+	if (mask)
+	{
 		dev[0x82] |= mask;
-		if(controller_vector) uxn_eval(controller_vector);
+		if (controller_vector)
+			uxn_eval(controller_vector);
 	}
 }
 
-static void controller_up(Uint8 mask)
+void controller_up(Uint8 mask)
 {
-	if(mask) {
+	if (mask)
+	{
 		dev[0x82] &= (~mask);
-		if(controller_vector) uxn_eval(controller_vector);
+		if (controller_vector)
+			uxn_eval(controller_vector);
 	}
 }
 
-static void controller_key(Uint8 key)
+void controller_key(Uint8 key)
 {
-	if(key) {
+	if (key)
+	{
 		dev[0x83] = key;
-		if(controller_vector) uxn_eval(controller_vector);
+		if (controller_vector)
+			uxn_eval(controller_vector);
 		dev[0x83] = 0;
 	}
 }
 
-void
-controller_deo_vector(void)
+void controller_deo_vector(void)
 {
 	controller_vector = peek2(&dev[0x80]);
 }
-*/
+
 /*
 @|Mouse ------------------------------------------------------------- */
 /*
@@ -210,8 +215,6 @@ void mouse_deo_vector(void)
 @|File -------------------------------------------------------------- */
 
 #include "devices/file.h"
-
-
 
 /* clang-format off */
 
@@ -283,7 +286,7 @@ static const deo_handler deo_handlers[256] = {
 	[0x2d] = screen_deo_addr,
 	[0x2e] = screen_deo_pixel,
 	[0x2f] = screen_deo_sprite,
-	//[0x81] = controller_deo_vector,
+	[0x81] = controller_deo_vector,
 	//[0x91] = mouse_deo_vector,
 	[0xa5] = filea_deo_stat,
 	[0xa6] = filea_deo_delete,
