@@ -20,20 +20,32 @@ static void run()
     while (1)
     {
         sleep_us(16667);
-        char c = ps2GetChar();
-        if (c)
+        keyboardStatus_t status = ps2GetChar();
+        while (status.event)
         {
-            controller_key(c);
-            previousControllerButton = ps2GetController(c);
-            controller_down(previousControllerButton);
-        }
-        else
-        {
-            if (ps2IsReleased())
+            if (status.ascii)
             {
-                controller_up(previousControllerButton);
+                controller_key(status.ascii);
+                previousControllerButton = ps2GetController();
+                printf("Down: %x, Char: %x\n", previousControllerButton, status.ascii);
+                controller_down(previousControllerButton);
             }
-            previousControllerButton = 0;
+            else
+            {
+                if (!status.release)
+                {
+                    previousControllerButton = ps2GetController();
+                    printf("Down: %x\n", previousControllerButton, status.ascii);
+                    controller_down(previousControllerButton);
+                }
+                else
+                {
+                    controller_up(previousControllerButton);
+                    printf("Up: %x\n", previousControllerButton, status.ascii);
+                    previousControllerButton = 0;
+                }
+            }
+            status = ps2GetChar();
         }
         screen_update();
         counter++;

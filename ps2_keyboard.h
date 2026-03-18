@@ -18,11 +18,20 @@ enum ps2_pins
     PS2_CLK_PIN
 };
 
+typedef struct
+{
+    bool event;
+    bool release; // Flag indicates the release of a key
+    bool shift;   // Shift indication
+    bool cntl;    // Control indication
+    bool caps;    // Caps Lock
+    bool alt;     // Alt key
+    char ascii;
+} keyboardStatus_t;
+
 void initPS2(void);
-unsigned char ps2GetChar();
-unsigned char ps2GetCharBlk();
+keyboardStatus_t ps2GetChar();
 void clearPS2(void);
-uint8_t ps2IsReleased();
-uint8_t ps2GetController(char c);
+uint8_t ps2GetController();
 
 #endif // P2_KEYBOARD_H_

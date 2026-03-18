@@ -22,11 +22,10 @@ static PIO ps2_pio;
 static uint ps2_pio_irq;
 static void ps2_ihandler();
 
-static bool release; // Flag indicates the release of a key
-static bool shift;   // Shift indication
-static bool cntl;    // Control indication
-static bool caps;    // Caps Lock
-static bool alt;     // Alt key
+static bool extended;
+static bool event;
+static bool release;
+volatile static keyboardStatus_t status;
 
 static unsigned char keybuf[128];
 volatile static unsigned char *rptr = keybuf;
@@ -54,7 +53,7 @@ void initPS2(void)
 void clearPS2(void)
 {
     pio_sm_clear_fifos(ps2_pio, ps2_sm);
-    release = shift = cntl = caps = 0;
+    release = status.shift = status.cntl = status.caps = 0;
     rptr = wptr = keybuf;
 }
 // clang-format off
@@ -103,139 +102,132 @@ static const char __in_flash() ps2_to_ascii_cntl[] = {
 void __not_in_flash_func(ps2_ihandler)(void)   
 { 
     unsigned char ascii = 0; 
-    // pio_interrupt_clear(ps2_pio, 0);
     if (pio_sm_is_rx_fifo_empty(ps2_pio, ps2_sm)) {
         pio_interrupt_clear(ps2_pio, 1);
         return;
     }
+    event = 1;
     // pull a scan code from the PIO SM fifo
     // uint8_t code = *((io_rw_8*)&ps2_pio->rxf[ps2_sm] + 3);
     uint8_t code = pio_sm_get(ps2_pio, ps2_sm) >> 24;
     switch (code) {
+        case 0xE0:
+            extended = 1;
+            event = 0;  // no event yet!
+            break;
         case 0xF0:               // key-release code 0xF0
             release = 1;         // release flag
+            status.release = 1;
             break;
         case 0x58:               // Caps Lock?
-            if (release) {
+            if (status.release) {
                 release = 0;
             } else {
-                caps = !caps;
+                status.caps = !status.caps;
             }
             break;
 
         case 0x12:               // Left-side shift
         case 0x59:               // Right-side shift
             if (release) {
-                shift = 0;
+                status.shift = 0;
                 release = 0;
             } else {
-                shift = 1;
+                status.shift = 1;
             }
             break;
         case 0x14:               // Left or Right CNTL key (yep, same scancode)
             if (release) {
-                cntl = 0;
+                status.cntl = 0;
                 release = 0;
             } else {
-                cntl = 1;
+                status.cntl = 1;
             }
             break;
-        case 0x11:               // Left or Right CNTL key (yep, same scancode)
+        case 0x11:               // Left or Right ALT key (yep, same scancode)
             if (release) {
-                alt = 0;
+                status.alt = 0;
                 release = 0;
             } else {
-                alt = 1;
+                status.alt = 1;
             }
             break;
         default:
             code &= 0x7F;
-            if (!release) {
-                if (cntl) {
+            if (!status.release) {
+                if (status.cntl) {
                     ascii = ps2_to_ascii_cntl[code];
-                    // cntl = 0;
-                } else if (shift) {
+                } else if (status.shift) {
                     ascii = ps2_to_ascii_upper[code];
-                    // shift = 0;
                 } else {
-                    // default
                     ascii = ps2_to_ascii_lower[code];
-                    if (caps && (ascii >= 'a' && ascii <= 'z')) {
+                    if (status.caps && (ascii >= 'a' && ascii <= 'z')) {
                         ascii -= 32;
                     }
                 }
+                
             }
             release = 0;
+            extended = 0;
             break;
     }
-    *wptr++ = ascii;
+    if(!extended || !release)
+        *wptr++ = ascii;
+    
     if (wptr >= (keybuf + sizeof(keybuf)))
         wptr = keybuf;
     pio_interrupt_clear(ps2_pio, 1);
 }
 
-// Return keyboard status
-// Returns: 0 for not ready, ASCII code otherwise ready
-// The default is to auto-print to the VGA console, but we
-// can disable this if, for some reason, we want/need the
-// *host* (ie, the 6502) to echo rec'd characters itself.
-unsigned char ps2GetChar() {
+keyboardStatus_t ps2GetChar() 
+{
     unsigned char ascii = 0;
+    keyboardStatus_t returnstatus = status;
+    status.release = 0;
+    returnstatus.event = event;
     if (rptr != wptr) {
-        ascii = *rptr++;
+        returnstatus.ascii = *rptr++;
         if (rptr >= (keybuf + sizeof(keybuf)))
             rptr = keybuf;
     }
-    return ascii;
-}
-
-// Blocking keyboard read
-// Returns  - single ASCII character
-unsigned char ps2GetCharBlk() {
-    unsigned char c;
-    while (!(c = ps2GetChar())) {
-        tight_loop_contents();
+    if (rptr == wptr) { //If no more ascii characters are left to read, we are done with the event. 
+        event = 0;
     }
-    return c;
+    return returnstatus;
 }
 
-uint8_t ps2IsReleased()
-{
-    return release;
-}
-
-uint8_t ps2GetController(char c)
+uint8_t ps2GetController()
 {
     uint8_t mask = 0;
-    if(cntl)
+    if(status.cntl)
     {
         mask |= 0x01;
     }
-    if(alt)
+    if(status.alt)
     {
         mask |= 0x02;
     }
-    if(shift)
+    if(status.shift)
     {
         mask |= 0x04;
     }
-    if(c == 0x90)
+    if(*rptr == 0x90)
     {
         mask |= 0x08;
     }
-    if(c == 0x11)
+    if(*rptr == 0x11)
     {
         mask |= 0x10;
     }
-    if(c == 0x12)
+    if(*rptr == 0x12)
     {
         mask |= 0x20;
     }
-    if(c == 0x14)
+    if(*rptr == 0x14)
     {
         mask |= 0x40;
     }
-    if(c == 0x13)
+    if(*rptr == 0x13)
     {
         mask |= 0x80;
     }
