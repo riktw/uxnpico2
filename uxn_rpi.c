@@ -13,36 +13,40 @@
 static void run()
 {
     static int counter = 0;
-    static char previousControllerButton = 0;
+    uint8_t storedControllerCode = 0;
     // int c = getchar_timeout_us(16667);
     // if (c >= 0)
     //     console_input(u, (Uint8)c);
     while (1)
     {
         sleep_us(16667);
-        keyboardStatus_t status = ps2GetChar();
-        while (status.event)
+        uint16_t status = ps2GetChar();
+
+        while (status != 0 && status != 0x8000)
         {
-            if (status.ascii)
+            uint8_t control = status >> 8;
+            uint8_t ascii = status & 0x00FF;
+            uint8_t controllerCode = ps2GetController(control, ascii);
+            if (CheckBit(control, RELEASE_BIT))
             {
-                controller_key(status.ascii);
-                previousControllerButton = ps2GetController();
-                printf("Down: %x, Char: %x\n", previousControllerButton, status.ascii);
-                controller_down(previousControllerButton);
+                controller_up(controllerCode);
+                printf("Up! Flags: %x, Ascii: %x, controller: %x\n", control, ascii, controllerCode);
             }
-            else
+            else if (!CheckBit(control, EXTENDED_BIT))
             {
-                if (!status.release)
+                if (ascii)
                 {
-                    previousControllerButton = ps2GetController();
-                    printf("Down: %x\n", previousControllerButton, status.ascii);
-                    controller_down(previousControllerButton);
+                    controller_key(ascii);
+                    printf("Ascii! Flags: %x, Char: %x, controller: %x\n", control, ascii, controllerCode);
+                    controller_down(controllerCode);
+                    storedControllerCode = controllerCode;
                 }
+
                 else
                 {
-                    controller_up(previousControllerButton);
-                    printf("Up: %x\n", previousControllerButton, status.ascii);
-                    previousControllerButton = 0;
+                    printf("Down! Flags: %x, controller: %x\n", control, controllerCode);
+                    controller_down(controllerCode);
+                    storedControllerCode = controllerCode;
                 }
             }
             status = ps2GetChar();
