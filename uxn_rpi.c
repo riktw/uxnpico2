@@ -13,43 +13,33 @@
 static void run()
 {
     static int counter = 0;
-    uint8_t storedControllerCode = 0;
     // int c = getchar_timeout_us(16667);
     // if (c >= 0)
     //     console_input(u, (Uint8)c);
     while (1)
     {
         sleep_us(16667);
-        uint16_t status = ps2GetChar();
+        uint16_t keyboardEvent = ps2GetEvent();
 
-        while (status != 0 && status != 0x8000)
+        // TODO: clean up keyboard code here and in ps_keyboard.c
+        while (keyboardEvent != 0 && keyboardEvent != KEYBOARD_EVENT_IDLE)
         {
-            uint8_t control = status >> 8;
-            uint8_t ascii = status & 0x00FF;
+            uint8_t control = keyboardEvent >> 8;
+            uint8_t ascii = keyboardEvent & 0x00FF;
             uint8_t controllerCode = ps2GetController(control, ascii);
             if (CheckBit(control, RELEASE_BIT))
             {
                 controller_up(controllerCode);
-                printf("Up! Flags: %x, Ascii: %x, controller: %x\n", control, ascii, controllerCode);
             }
             else if (!CheckBit(control, EXTENDED_BIT))
             {
                 if (ascii)
                 {
                     controller_key(ascii);
-                    printf("Ascii! Flags: %x, Char: %x, controller: %x\n", control, ascii, controllerCode);
-                    controller_down(controllerCode);
-                    storedControllerCode = controllerCode;
                 }
-
-                else
-                {
-                    printf("Down! Flags: %x, controller: %x\n", control, controllerCode);
-                    controller_down(controllerCode);
-                    storedControllerCode = controllerCode;
-                }
+                controller_down(controllerCode);
             }
-            status = ps2GetChar();
+            keyboardEvent = ps2GetEvent();
         }
         screen_update();
         counter++;
@@ -69,7 +59,7 @@ int main()
 
     stdio_init_all();
 
-    uxn_load_rom("CCCC.rom");
+    uxn_load_rom("perifs.rom");
 
     core1_init();
 

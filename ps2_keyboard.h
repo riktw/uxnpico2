@@ -22,14 +22,14 @@ enum ps2_pins
 #define SHIFT_BIT 5
 #define CONTROL_BIT 4
 #define ALT_BIT 3
-#define CAPS_BIT 2
 #define RELEASE_BIT 1
+#define KEYBOARD_EVENT_IDLE 0x8000
 
 uint8_t SetBit(uint8_t input, uint8_t offset, bool bit);
 bool CheckBit(uint8_t input, uint8_t offset);
 
 void initPS2(void);
-uint16_t ps2GetChar();
+uint16_t ps2GetEvent();
 void clearPS2(void);
 uint8_t ps2GetController(uint8_t, uint8_t);
 
