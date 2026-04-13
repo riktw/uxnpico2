@@ -177,31 +177,35 @@ void controller_deo_vector(void)
 
 /*
 @|Mouse ------------------------------------------------------------- */
-/*
-static void mouse_down(Uint8 mask)
+
+void mouse_down(Uint8 mask)
 {
 	dev[0x96] |= mask;
-	if(mouse_vector) uxn_eval(mouse_vector);
+	if (mouse_vector)
+		uxn_eval(mouse_vector);
 }
 
-static void mouse_up(Uint8 mask)
+void mouse_up(Uint8 mask)
 {
 	dev[0x96] &= (~mask);
-	if(mouse_vector) uxn_eval(mouse_vector);
+	if (mouse_vector)
+		uxn_eval(mouse_vector);
 }
 
-static void mouse_pos(Uint16 x, Uint16 y)
+void mouse_pos(Uint16 x, Uint16 y)
 {
 	poke2(&dev[0x92], x);
 	poke2(&dev[0x94], y);
-	if(mouse_vector) uxn_eval(mouse_vector);
+	if (mouse_vector)
+		uxn_eval(mouse_vector);
 }
 
-static void mouse_scroll(Uint16 x, Uint16 y)
+void mouse_scroll(Uint16 x, Uint16 y)
 {
 	poke2(&dev[0x9a], x);
 	poke2(&dev[0x9c], -y);
-	if(mouse_vector) uxn_eval(mouse_vector);
+	if (mouse_vector)
+		uxn_eval(mouse_vector);
 	poke2(&dev[0x9a], 0);
 	poke2(&dev[0x9c], 0);
 }
@@ -210,7 +214,7 @@ void mouse_deo_vector(void)
 {
 	mouse_vector = peek2(&dev[0x90]);
 }
-*/
+
 /*
 @|File -------------------------------------------------------------- */
 
@@ -287,7 +291,7 @@ static const deo_handler deo_handlers[256] = {
 	[0x2e] = screen_deo_pixel,
 	[0x2f] = screen_deo_sprite,
 	[0x81] = controller_deo_vector,
-	//[0x91] = mouse_deo_vector,
+	[0x91] = mouse_deo_vector,
 	[0xa5] = filea_deo_stat,
 	[0xa6] = filea_deo_delete,
 	[0xa9] = filea_deo_name,

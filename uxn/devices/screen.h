@@ -2,6 +2,8 @@
 
 void screen_init();
 void screen_resize(int width, int height);
+int screen_get_height();
+int screen_get_width();
 
 void screen_run_update(void);
 int screen_get_vector(void);

@@ -74,6 +74,16 @@ void screen_resize(int width, int height)
 	}
 }
 
+int screen_get_height()
+{
+	return screen_height;
+}
+
+int screen_get_width()
+{
+	return screen_width;
+}
+
 int screen_get_vector(void)
 {
 	return screen_vector;

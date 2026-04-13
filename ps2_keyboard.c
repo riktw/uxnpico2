@@ -4,19 +4,14 @@
  * https://github.com/jimjag/JJ65c02/tree/main
  */
 
-#include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
 #include "pico/stdlib.h"
 #include <stdio.h>
 #include <stdlib.h>
-// Our assembled program:
-// pioasm converts foo.pio to fio.pio.h
-#include "ps2_keyboard.pio.h"
 // Header file
 #include "ps2_keyboard.h"
 
-static uint ps2_offset;
 static uint ps2_sm;
 static PIO ps2_pio;
 static uint ps2_pio_irq;
@@ -40,31 +35,13 @@ static uint8_t keybufIndexTail = 0;
 #define CODE_CONTROL 0x14
 #define CODE_ALT 0x11
 
-uint8_t SetBit(uint8_t input, uint8_t offset, bool bit)
-{
-    if (bit)
-    {
-        return (input | (1 << offset));
-    }
-    else
-    {
-        return input;
-    }
-}
-
-bool CheckBit(uint8_t input, uint8_t offset)
-{
-    return (input & (1 << offset));
-}
-
 void initPS2(void)
 {
     ps2_pio = pio2;
-    ps2_pio_irq = PIO2_IRQ_1;
-    ps2_offset = pio_add_program(ps2_pio, &ps2_program);
+    ps2_pio_irq = PIO2_IRQ_0;
     ps2_sm = pio_claim_unused_sm(ps2_pio, true);
-    ps2_program_init(ps2_pio, ps2_sm, ps2_offset, PS2_DATA_PIN, PS2FREQ);
-    pio_set_irq1_source_enabled(ps2_pio, pis_interrupt1, true);
+    ps2in_init(ps2_pio, ps2_sm, PS2_DATA_PIN, PS2FREQ);
+    pio_set_irq0_source_enabled(ps2_pio, pis_interrupt0, true);
     irq_set_exclusive_handler(ps2_pio_irq, ps2_ihandler);
     irq_set_enabled(ps2_pio_irq, true);
     pio_sm_set_enabled(ps2_pio, ps2_sm, true);
@@ -129,82 +106,81 @@ static const char __in_flash() ps2_to_ascii_cntl[] = {
 void __not_in_flash_func(ps2_ihandler)(void)
 {
     unsigned char ascii = 0;
-    if (pio_sm_is_rx_fifo_empty(ps2_pio, ps2_sm))
+
+    if (!pio_sm_is_rx_fifo_empty(ps2_pio, ps2_sm))
     {
-        pio_interrupt_clear(ps2_pio, 1);
-        return;
+        // pull a scan code from the PIO SM fifo
+        uint8_t code = (pio_sm_get(ps2_pio, ps2_sm) >> 23) & 0xFF;
+
+        switch (code)
+        {
+        case CODE_EXTENDED:
+            // Extended code
+            extended = 1;
+            break;
+        case CODE_RELEASED: // key-release code 0xF0
+            release = 1;    // release flag
+            break;
+        case 0x58: // Caps Lock?
+                   // caps lock, not handled for now
+            break;
+        case CODE_RIGHT_SHIFT: // Left-side shift
+        case CODE_LEFT_SHIFT:  // Right-side shift
+            shift = 1;
+            break;
+        case CODE_CONTROL: // Left or Right CNTL key (yep, same scancode)
+            control = 1;
+            break;
+        case CODE_ALT: // Left or Right ALT key (yep, same scancode)
+            alt = 1;
+            break;
+        default:
+            code &= 0x7F;
+            if (extended)
+            {
+                extended = 0;
+            }
+
+            if (control)
+            {
+                ascii = ps2_to_ascii_cntl[code];
+            }
+            else if (shift)
+            {
+                ascii = ps2_to_ascii_upper[code];
+            }
+            else
+            {
+                ascii = ps2_to_ascii_lower[code];
+            }
+
+            break;
+        }
+
+        uint8_t controlFlags = 0;
+        controlFlags = SetBit(controlFlags, 7, 1); // always have 1 bit high for checking if an entry was there.
+        controlFlags = SetBit(controlFlags, EXTENDED_BIT, extended);
+        controlFlags = SetBit(controlFlags, SHIFT_BIT, shift);
+        controlFlags = SetBit(controlFlags, CONTROL_BIT, control);
+        controlFlags = SetBit(controlFlags, ALT_BIT, alt);
+        controlFlags = SetBit(controlFlags, RELEASE_BIT, releaseaction);
+
+        shift = 0;
+        alt = 0;
+        control = 0;
+
+        if (!release)
+        {
+            keybuf[keybufIndexHead] = (controlFlags << 8) | ascii;
+            if (keybufIndexHead < sizeof(keybuf))
+            {
+                keybufIndexHead++;
+            }
+        }
+        releaseaction = release;
+        release = 0;
     }
-    // pull a scan code from the PIO SM fifo
-    uint8_t code = pio_sm_get(ps2_pio, ps2_sm) >> 24;
-
-    switch (code)
-    {
-    case CODE_EXTENDED:
-        // Extended code
-        extended = 1;
-        break;
-    case CODE_RELEASED: // key-release code 0xF0
-        release = 1;    // release flag
-        break;
-    case 0x58: // Caps Lock?
-               // caps lock, not handled for now
-        break;
-    case CODE_RIGHT_SHIFT: // Left-side shift
-    case CODE_LEFT_SHIFT:  // Right-side shift
-        shift = 1;
-        break;
-    case CODE_CONTROL: // Left or Right CNTL key (yep, same scancode)
-        control = 1;
-        break;
-    case CODE_ALT: // Left or Right ALT key (yep, same scancode)
-        alt = 1;
-        break;
-    default:
-        code &= 0x7F;
-        if (extended)
-        {
-            extended = 0;
-        }
-
-        if (control)
-        {
-            ascii = ps2_to_ascii_cntl[code];
-        }
-        else if (shift)
-        {
-            ascii = ps2_to_ascii_upper[code];
-        }
-        else
-        {
-            ascii = ps2_to_ascii_lower[code];
-        }
-
-        break;
-    }
-
-    uint8_t controlFlags = 0;
-    controlFlags = SetBit(controlFlags, 7, 1); // always have 1 bit high for checking if an entry was there.
-    controlFlags = SetBit(controlFlags, EXTENDED_BIT, extended);
-    controlFlags = SetBit(controlFlags, SHIFT_BIT, shift);
-    controlFlags = SetBit(controlFlags, CONTROL_BIT, control);
-    controlFlags = SetBit(controlFlags, ALT_BIT, alt);
-    controlFlags = SetBit(controlFlags, RELEASE_BIT, releaseaction);
-
-    shift = 0;
-    alt = 0;
-    control = 0;
-
-    if (!release)
-    {
-        keybuf[keybufIndexHead] = (controlFlags << 8) | ascii;
-        if (keybufIndexHead < sizeof(keybuf))
-        {
-            keybufIndexHead++;
-        }
-    }
-    releaseaction = release;
-    release = 0;
-    pio_interrupt_clear(ps2_pio, 1);
+    pio_interrupt_clear(ps2_pio, 0);
 }
 
 // events can be:
