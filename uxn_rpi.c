@@ -116,7 +116,7 @@ int main()
 
     stdio_init_all();
 
-    uxn_load_rom("perifs.rom");
+    uxn_load_rom("amiga.rom");
 
     core1_init();
 
@@ -129,8 +129,6 @@ int main()
     }
 
     run();
-
-    // unmount();
 
     while (true)
     {

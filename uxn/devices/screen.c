@@ -108,7 +108,7 @@ void screen_run_update(void)
 		CLAMP(screen_y2, 0, screen_height);
 	}
 }
-
+#include <stdio.h>
 void screen_deo_pixel(void)
 {
 	const int ctrl = dev[0x2e];
@@ -123,18 +123,9 @@ void screen_deo_pixel(void)
 		const int x2 = (ctrl & 0x10) ? rX : screen_width;
 		const int y1 = (ctrl & 0x20) ? 8 : rY + 8;
 		const int y2 = (ctrl & 0x20) ? rY : screen_height;
-		const int hor = (x2 + 8) - x1;
-		const int ver = (y2 + 8) - y1;
-		// TODO: fill mode
-		/*
-		Uint8 *row = &screen_layers[y1 * screen_wmar2 + x1];
-		Uint8 *end = row + ver * screen_wmar2;
-		for(; row < end; row += screen_wmar2) {
-			Uint8 *dst = row;
-			for(px = 0; px < hor; px++)
-				dst[px] = (dst[px] & mask) | color;
-		}
-		*/
+
+		core1_fillPixels(x1 + screen_width_offset, x2 + screen_width_offset + UXN_PADDING, y1 + screen_height_offset, y2 + screen_height_offset + UXN_PADDING, mask, color);
+
 		screen_reqdraw = 1;
 	}
 	// pixel mode

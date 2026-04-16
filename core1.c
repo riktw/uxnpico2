@@ -66,7 +66,7 @@ void core1_setResolution(uint16_t height, uint16_t width)
     memset(uxnbuf, 0x00, sizeof(uxnbuf));
 }
 
-void core1_setPixel(uint16_t x, uint16_t y, uint8_t mask, uint8_t color)
+void __not_in_flash_func(core1_setPixel)(uint16_t x, uint16_t y, uint8_t mask, uint8_t color)
 {
     uint32_t uxnlocation = (y * (UXN_WIDTH)) + x;
     uint32_t uxnActualLocation = uxnlocation >> 1;
@@ -83,6 +83,51 @@ void core1_setPixel(uint16_t x, uint16_t y, uint8_t mask, uint8_t color)
     {
         uxnbuf[uxnActualLocation] &= (0xF0 + mask);
         uxnbuf[uxnActualLocation] += color;
+    }
+}
+
+void __not_in_flash_func(core1_fillPixels)(uint16_t x1, uint16_t x2, uint16_t y1, uint16_t y2, uint8_t mask, uint8_t color)
+{
+    uint32_t uxnlocation = (y1 * (UXN_WIDTH)) + x1;
+    uint32_t uxnActualLocation = uxnlocation >> 1;
+
+    uint8_t dualMask = (mask << 4) + mask;
+    uint8_t dualPixel = (color << 4) + color;
+
+    if (((x2 - x1) % 2 == 0)) // 2 pixels per byte, if we happen to draw even amounts, nice speedup
+    {
+        for (int y = y1; y < y2; y++)
+        {
+            for (int x = x1; x < x2; x += 2)
+            {
+                uxnlocation = (y * (UXN_WIDTH)) + x;
+                uxnActualLocation = uxnlocation >> 1;
+                uxnbuf[uxnActualLocation] &= dualMask;
+                uxnbuf[uxnActualLocation] += dualPixel;
+            }
+        }
+    }
+    else
+    {
+        for (int y = y1; y < y2; y++)
+        {
+            for (int x = x1; x < x2; x++)
+            {
+
+                uxnlocation = (y * (UXN_WIDTH)) + x;
+                uxnActualLocation = uxnlocation >> 1;
+                if (uxnlocation & 0x0001)
+                {
+                    uxnbuf[uxnActualLocation] &= ((mask << 4) + 0x0F);
+                    uxnbuf[uxnActualLocation] += (color << 4);
+                }
+                else
+                {
+                    uxnbuf[uxnActualLocation] &= (0xF0 + mask);
+                    uxnbuf[uxnActualLocation] += color;
+                }
+            }
+        }
     }
 }
 
