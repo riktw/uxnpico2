@@ -12,29 +12,6 @@
 
 #include "uxn/uxn11.h"
 
-uint8_t reverse_bits(uint8_t original_byte)
-{
-    uint8_t reversed_byte = 0;
-    int bits = 8; // We're reversing an 8-bit byte
-
-    for (int i = 0; i < bits; i++)
-    {
-        // Step 1: Extract LSB of original_byte (0 or 1)
-        uint8_t lsb = original_byte & 1;
-
-        // Step 2: Shift reversed_byte left by 1 to make space for the new LSB
-        reversed_byte <<= 1;
-
-        // Step 3: Set the new LSB of reversed_byte to the extracted bit
-        reversed_byte |= lsb;
-
-        // Step 4: Right-shift original_byte to process the next bit
-        original_byte >>= 1;
-    }
-
-    return reversed_byte;
-}
-
 static void run()
 {
     static int counter = 0;

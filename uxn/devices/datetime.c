@@ -1,5 +1,8 @@
 #include <time.h>
 #include "datetime.h"
+#include <stdio.h>
+
+extern uint32_t instructionCount;
 
 time_t seconds = 0;
 struct tm *datetime_t;
@@ -7,6 +10,11 @@ struct tm *datetime_t;
 void SecondPasssed()
 {
 	seconds++;
+	unsigned int ips = (instructionCount / seconds);
+	volatile uint32_t secs = seconds;
+	printf("Sec: %li ", secs);
+	printf("Instr: %i ", instructionCount);
+	printf("IPS: %li \n", ips);
 }
 
 void datetime_update()
