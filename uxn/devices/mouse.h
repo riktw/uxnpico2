@@ -10,7 +10,17 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
 WITH REGARD TO THIS SOFTWARE.
 */
 
-void mouse_down(Device *d, Uint8 mask);
-void mouse_up(Device *d, Uint8 mask);
-void mouse_pos(Device *d, Uint16 x, Uint16 y);
-void mouse_scroll(Device *d, Uint16 x, Uint16 y);
+#ifndef UXN_DEVICES_MOUSE_H
+#define UXN_DEVICES_MOUSE_H
+
+#include <stdint.h>
+
+void initPS2Mouse(uint32_t dataPin);
+
+void mouse_deo_vector(void);
+void mouse_down(Uint8 mask);
+void mouse_up(Uint8 mask);
+void mouse_pos(Uint16 x, Uint16 y);
+void mouse_scroll(Uint16 x, Uint16 y);
+
+#endif

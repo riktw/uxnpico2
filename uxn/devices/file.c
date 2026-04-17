@@ -5,8 +5,8 @@
 #include "../uxn11.h"
 #include "file.h"
 
-FATFS fs;
-FIL fp;
+static FATFS fs;
+static FIL fp;
 
 extern Uint8 ram[0x10000];
 extern Uint8 dev[0x100];

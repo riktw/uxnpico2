@@ -4,8 +4,6 @@
 #include "pico/stdlib.h"
 #include <stdio.h>
 #include <stdlib.h>
-// Our assembled program:
-// Header file
 #include "ps2_mouse.h"
 
 static uint ps2_sm;

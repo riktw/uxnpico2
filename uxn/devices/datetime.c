@@ -4,8 +4,8 @@
 
 extern uint32_t instructionCount;
 
-time_t seconds = 0;
-struct tm *datetime_t;
+static time_t seconds = 0;
+static struct tm *datetime_t;
 
 void SecondPasssed()
 {

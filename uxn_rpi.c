@@ -7,7 +7,6 @@
 
 #include "core1.h"
 #include "ps2_keyboard.h"
-#include "ps2_mouse.h"
 #include "devices/screen.h"
 
 #include "uxn/uxn11.h"
@@ -15,7 +14,7 @@
 static void run()
 {
     static int counter = 0;
-    mouseEvent_t previousMouseEvent;
+    // mouseEvent_t previousMouseEvent;
     int32_t xpos = 0;
     int32_t ypos = 0;
     // int c = getchar_timeout_us(16667);
@@ -47,6 +46,7 @@ static void run()
             keyboardEvent = ps2GetEvent();
         }
 
+        /*
         while (ps2MouseNewEvent())
         {
             mouseEvent_t mouseEvent = ps2MouseGetEvent();
@@ -73,6 +73,7 @@ static void run()
             ypos = (ypos >= screen_get_height()) ? screen_get_height() : ypos; // program size, not max size
             mouse_pos(xpos, ypos);
         }
+        */
 
         sleep_us(16667);
         screen_update();
@@ -93,12 +94,13 @@ int main()
 
     stdio_init_all();
 
+    uxn_init();
+
     uxn_load_rom("amiga.rom");
 
     core1_init();
 
     initPS2();
-    initPS2Mouse();
 
     if (!uxn_eval(PAGE_PROGRAM))
     {

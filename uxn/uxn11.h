@@ -51,12 +51,9 @@ void screen_update(void);
 void controller_down(Uint8 mask);
 void controller_up(Uint8 mask);
 void controller_key(Uint8 key);
-void mouse_down(Uint8 mask);
-void mouse_up(Uint8 mask);
-void mouse_pos(Uint16 x, Uint16 y);
-void mouse_scroll(Uint16 x, Uint16 y);
 
 int uxn_boot(Uxn11 *u, Uint8 *ram);
+int uxn_init();
 unsigned int uxn_eval(Uint16 pc);
 int uxn_load_rom(char *filename);
 // int uxn_interrupt(void);

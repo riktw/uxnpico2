@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "uxn11.h"
+#include "devices/mouse.h"
 
 /*
 Copyright (c) 2021-2026 Devine Lu Linvega, Andrew Alderwick,
@@ -20,7 +21,7 @@ cc -DNDEBUG -O2 -g0 -s src/uxn11.c -lX11 -lutil -o bin/uxn11
 */
 
 Uint8 ram[0x10000], dev[0x100], stk[2][0x100], ptr[2];
-static int console_vector, screen_vector, controller_vector, mouse_vector;
+static int console_vector, screen_vector, controller_vector;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
 
 uint32_t instructionCount = 0;
@@ -79,7 +80,7 @@ static unsigned int system_reboot(const unsigned int soft)
 	else
 		memset(ram, 0, 0x10000);
 	ptr[0] = ptr[1] = 0;
-	console_vector = screen_vector = controller_vector = mouse_vector = 0;
+	console_vector = screen_vector = controller_vector = 0;
 	rX = rY = rA = rMX = rMY = rMA = rML = rDX = rDY = rL1 = rL2 = 0;
 	return uxn_load_rom(system_boot_path);
 }
@@ -179,43 +180,7 @@ void controller_deo_vector(void)
 
 /*
 @|Mouse ------------------------------------------------------------- */
-
-void mouse_down(Uint8 mask)
-{
-	dev[0x96] |= mask;
-	if (mouse_vector)
-		uxn_eval(mouse_vector);
-}
-
-void mouse_up(Uint8 mask)
-{
-	dev[0x96] &= (~mask);
-	if (mouse_vector)
-		uxn_eval(mouse_vector);
-}
-
-void mouse_pos(Uint16 x, Uint16 y)
-{
-	poke2(&dev[0x92], x);
-	poke2(&dev[0x94], y);
-	if (mouse_vector)
-		uxn_eval(mouse_vector);
-}
-
-void mouse_scroll(Uint16 x, Uint16 y)
-{
-	poke2(&dev[0x9a], x);
-	poke2(&dev[0x9c], -y);
-	if (mouse_vector)
-		uxn_eval(mouse_vector);
-	poke2(&dev[0x9a], 0);
-	poke2(&dev[0x9c], 0);
-}
-
-void mouse_deo_vector(void)
-{
-	mouse_vector = peek2(&dev[0x90]);
-}
+#include "devices/mouse.h"
 
 /*
 @|File -------------------------------------------------------------- */
@@ -397,8 +362,14 @@ unsigned int __not_in_flash_func(uxn_eval)(Uint16 pc)
 	return 0;
 }
 
+int uxn_init()
+{
+	initPS2Mouse(6);
+}
+
 int uxn_load_rom(char *filename)
 {
 	load_rom(ram, filename);
 	screen_resize(WIDTH, HEIGHT);
 }
+
