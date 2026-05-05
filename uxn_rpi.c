@@ -23,6 +23,7 @@ static void run()
     while (1)
     {
 
+        /*
         uint16_t keyboardEvent = ps2GetEvent();
 
         // TODO: clean up keyboard code here and in ps_keyboard.c
@@ -46,7 +47,7 @@ static void run()
             keyboardEvent = ps2GetEvent();
         }
 
-        /*
+
         while (ps2MouseNewEvent())
         {
             mouseEvent_t mouseEvent = ps2MouseGetEvent();
@@ -76,6 +77,7 @@ static void run()
         */
 
         sleep_us(16667);
+        printf("a");
         screen_update();
         counter++;
         if (counter >= 60)
@@ -96,11 +98,9 @@ int main()
 
     uxn_init();
 
-    uxn_load_rom("amiga.rom");
+    uxn_load_rom("CCCC.rom");
 
     core1_init();
-
-    initPS2();
 
     if (!uxn_eval(PAGE_PROGRAM))
     {

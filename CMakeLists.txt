@@ -35,14 +35,15 @@ pico_sdk_init()
 add_subdirectory(${CMAKE_SOURCE_DIR}/Libraries/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/src build)
 add_subdirectory(${CMAKE_SOURCE_DIR}/Libraries/pico_hdmi)
 
-add_executable(uxn_rpi uxn_rpi.c core1.c uxn/uxn11.c uxn/devices/file.c uxn/devices/datetime.c uxn/devices/screen.c uxn/devices/mouse.c ps2_shared.c ps2_keyboard.c  hw_config.c)
+add_executable(uxn_rpi uxn_rpi.c core1.c uxn/uxn11.c uxn/devices/file.c uxn/devices/datetime.c uxn/devices/screen.c uxn/devices/mouse.c uxn/devices/controller.c ps2_shared.c ps2_keyboard.c  hw_config.c)
 
 pico_set_program_name(uxn_rpi "uxn_rpi")
 pico_set_program_version(uxn_rpi "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(uxn_rpi 1)
+pico_enable_stdio_uart(uxn_rpi 0)
 pico_enable_stdio_usb(uxn_rpi 0)
+pico_enable_stdio_rtt(uxn_rpi 1)
 
 pico_generate_pio_header(uxn_rpi ${CMAKE_CURRENT_LIST_DIR}/ps2_input.pio)
 

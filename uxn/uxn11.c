@@ -141,42 +141,7 @@ void screen_update(void)
 
 /*
 @|Controller -------------------------------------------------------- */
-
-void controller_down(Uint8 mask)
-{
-	if (mask)
-	{
-		dev[0x82] |= mask;
-		if (controller_vector)
-			uxn_eval(controller_vector);
-	}
-}
-
-void controller_up(Uint8 mask)
-{
-	if (mask)
-	{
-		dev[0x82] &= (~mask);
-		if (controller_vector)
-			uxn_eval(controller_vector);
-	}
-}
-
-void controller_key(Uint8 key)
-{
-	if (key)
-	{
-		dev[0x83] = key;
-		if (controller_vector)
-			uxn_eval(controller_vector);
-		dev[0x83] = 0;
-	}
-}
-
-void controller_deo_vector(void)
-{
-	controller_vector = peek2(&dev[0x80]);
-}
+#include "devices/controller.h"
 
 /*
 @|Mouse ------------------------------------------------------------- */
@@ -365,6 +330,7 @@ unsigned int __not_in_flash_func(uxn_eval)(Uint16 pc)
 int uxn_init()
 {
 	initPS2Mouse(6);
+	initPS2Keyboard(8);
 }
 
 int uxn_load_rom(char *filename)

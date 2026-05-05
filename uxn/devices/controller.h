@@ -13,9 +13,14 @@ WITH REGARD TO THIS SOFTWARE.
 #ifndef UXN_DEVICES_CONTROLLER_H
 #define UXN_DEVICES_CONTROLLER_H
 
-void controller_down(Device *d, Uint8 mask);
-void controller_up(Device *d, Uint8 mask);
-void controller_key(Device *d, Uint8 key);
-void controller_special(Device *d, Uint8 key);
+#include <stdint.h>
+
+void initPS2Keyboard(uint32_t dataPin);
+
+void controller_deo_vector(void);
+void controller_down(Uint8 mask);
+void controller_up(Uint8 mask);
+void controller_key(Uint8 key);
+void controller_special(Uint8 key);
 
 #endif
