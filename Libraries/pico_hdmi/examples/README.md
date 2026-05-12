@@ -2,6 +2,18 @@
 
 Example projects demonstrating the pico_hdmi HDMI output library for RP2350.
 
+## Prebuilt Release UF2s
+
+The GitHub release assets include these ready-to-flash bouncing-box demos:
+
+| Asset | Mode | HDMI path |
+|-------|------|-----------|
+| `bouncing_box.uf2` | 640x480 @ 60Hz | Non-RT / compile-time |
+| `bouncing_box_720p_nonrt.uf2` | 1280x720 @ 60Hz | Non-RT / compile-time |
+| `bouncing_box_720p_rt.uf2` | 1280x720 @ 60Hz | Runtime-mode (`video_output_rt.c`) |
+
+Both 720p UF2s require 372 MHz sys_clk and 1.3V core voltage; the demos set this at startup.
+
 ## bouncing_box
 
 Simple animated demo showing:
@@ -24,6 +36,19 @@ make
 
 Flash the resulting `bouncing_box.uf2` to your Pico 2.
 
+### 720p Non-RT Variant (experimental)
+
+The demo can also be built at 1280x720 @ 60Hz. This requires overclocking to 372 MHz at 1.3V core voltage; validate it on the target sink before relying on it.
+
+```bash
+cd examples/bouncing_box
+mkdir build && cd build
+cmake -DBOUNCING_BOX_720P=ON -DPICO_HDMI_RUNTIME_MODES=OFF ..
+make
+```
+
+In 720p mode audio remains enabled; the library places the HDMI Data Island in the back porch (hsync=40 px is too narrow to hold it) and uses positive sync polarity for CEA VIC 4. This is the non-RT / compile-time 720p path.
+
 ### Hardware
 
 Requires HSTX pins connected to an HDMI connector:
@@ -32,6 +57,30 @@ Requires HSTX pins connected to an HDMI connector:
 - GPIO 14-15: Data 0 (Blue)
 - GPIO 16-17: Data 1 (Green)
 - GPIO 18-19: Data 2 (Red)
+
+## bouncing_box_rt
+
+Same bouncing-box visuals as `bouncing_box`, but driven through the
+runtime-mode-switching variant of the library (`video_output_rt.c`) at
+1280x720 @ 60Hz. Demonstrates using the rt API with a CEA mode that needs
+positive sync polarity and back-porch Data Island placement.
+
+The CMakeLists forces `PICO_HDMI_RUNTIME_MODES=ON` and defines
+`VIDEO_MODE_1280x720` on **both** the library target and the executable —
+`DI_HSYNC_ACTIVE` is a compile-time macro whose value depends on the active
+`VIDEO_MODE_*`, and a mismatch between the library's view and the
+executable's view corrupts the embedded HSYNC bits in audio Data Island
+packets.
+
+Requires overclocking to 372 MHz at 1.3V, same as the bouncing_box 720p
+variant. Tested reliably on the Morph4K.
+
+```bash
+cd examples/bouncing_box_rt
+mkdir build && cd build
+cmake ..
+make
+```
 
 ## directvideo_240p
 

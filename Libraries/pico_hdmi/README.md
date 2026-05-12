@@ -1,4 +1,4 @@
-[![Discord](https://img.shields.io/discord/1469402044845527253)](https://discord.gg/fR4sXHf5)
+[![Discord](https://img.shields.io/discord/1469402044845527253)](https://discord.gg/NqK9m8CBPT)
 
 # PicoHDMI
 An HSTX-native HDMI output library for the RP2350 (Raspberry Pi Pico 2).
@@ -17,6 +17,33 @@ PicoHDMI leverages the RP2350's dedicated **HSTX (High-Speed Transmit)** periphe
 - **Double-Buffered DMA**: Stable video output with minimal jitter.
 - **True 240p DirectVideo Mode**: 320x240 output with HDMI pixel repetition for retro gaming scalers (Morph4K, RetroTINK 4K, OSSC).
 - **Configurable Audio Sample Rate**: Default 48kHz, with runtime support for 32kHz, 44.1kHz, and other standard HDMI rates. ACR N/CTS values follow the HDMI spec (Table 7-1/7-2).
+- **720p60 Mode (experimental)**: Opt-in 1280x720 @ 60Hz (CEA VIC 4) at 372 MHz system clock and 1.3V core voltage. HSTX pins are configured for fast slew and 12mA drive to improve sink margin at 720p. Enable by defining `VIDEO_MODE_1280x720` when compiling the library.
+
+## Video Modes
+
+The library selects a mode at compile time via a single define:
+
+| Define                 | Resolution | Pixel Clock | sys_clk | Notes                                   |
+|------------------------|------------|-------------|---------|-----------------------------------------|
+| *(none)*               | 640x480    | 25.2 MHz    | 126 MHz | Default — CEA VIC 1, negative sync      |
+| `VIDEO_MODE_320x240`   | 1280x240*  | 25.2 MHz    | 126 MHz | True 240p, 4x pixel repetition          |
+| `VIDEO_MODE_1280x720`  | 1280x720   | 74.4 MHz    | 372 MHz | CEA VIC 4, positive sync, needs 1.3V    |
+
+The library automatically handles sync polarity and Data Island placement per mode. For modes with a narrow hsync pulse (e.g. 720p60's 40-px hsync), the HDMI Data Island is placed in the back porch rather than inside the hsync pulse. This is transparent to callers.
+
+The HSTX output pins are configured for fast slew and 12mA drive. This gives the RP2350 enough edge margin for 720p60 on stricter sinks; weaker default pad settings can produce corruption or sync loss at 720p even when 480p is stable.
+
+## Prebuilt Demo UF2s
+
+GitHub Releases include ready-to-flash bouncing-box firmware for Pico 2:
+
+| Asset | Mode | HDMI path | Notes |
+|-------|------|-----------|-------|
+| `bouncing_box.uf2` | 640x480 @ 60Hz | Non-RT / compile-time | Default stable VGA/480p demo |
+| `bouncing_box_720p_nonrt.uf2` | 1280x720 @ 60Hz | Non-RT / compile-time | Uses `VIDEO_MODE_1280x720`; recommended for validating the compile-time 720p path |
+| `bouncing_box_720p_rt.uf2` | 1280x720 @ 60Hz | Runtime-mode (`video_output_rt.c`) | Uses the runtime-mode HDMI backend at CEA VIC 4 |
+
+Both 720p builds require the RP2350 to run at 372 MHz with 1.3V core voltage. The demo configures those clocks at startup.
 
 ## Audio Sample Rate
 

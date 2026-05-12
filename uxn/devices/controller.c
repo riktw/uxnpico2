@@ -1,21 +1,12 @@
 #include "../uxn11.h"
 #include "controller.h"
 
-#include "../../ps2_shared.h"
+#include "ps2_shared.h"
 #include "hardware/dma.h"
 #include "pico/stdlib.h"
+#include <stdio.h>
 
-/*
-Copyright (c) 2021 Devine Lu Linvega
-Copyright (c) 2021 Andrew Alderwick
-
-Permission to use, copy, modify, and distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE.
-*/
+// based on https://github.com/jimjag/JJ65c02/tree/main
 
 extern Uint8 dev[0x100];
 static int controller_vector = 0;
@@ -24,17 +15,12 @@ static uint ps2_sm;
 static PIO ps2_pio;
 static uint ps2_pio_irq;
 
-// clean up this below, can probably simplify this entire routine and remove ringbuffer and such
 static bool extended = 0;
 static bool shift = 0;
 static bool control = 0;
 static bool alt = 0;
-static bool releaseaction = 0;
 static bool release = 0;
-
-static uint16_t keybuf[128];
-static uint8_t keybufIndexHead = 0;
-static uint8_t keybufIndexTail = 0;
+static uint8_t storedControllerCode = 0;
 
 #define CODE_EXTENDED 0xE0
 #define CODE_RELEASED 0xF0
@@ -42,13 +28,6 @@ static uint8_t keybufIndexTail = 0;
 #define CODE_LEFT_SHIFT 0x59
 #define CODE_CONTROL 0x14
 #define CODE_ALT 0x11
-
-#define EXTENDED_BIT 6
-#define SHIFT_BIT 5
-#define CONTROL_BIT 4
-#define ALT_BIT 3
-#define RELEASE_BIT 1
-#define KEYBOARD_EVENT_IDLE 0x80
 
 // clang-format off
 
@@ -94,21 +73,9 @@ static const char __in_flash() ps2_to_ascii_cntl[] = {
 
 // clang-format on
 
-uint8_t GetControllerCode(uint8_t control, uint8_t ascii)
+uint8_t GetControllerCode(uint8_t ascii)
 {
 	uint8_t mask = 0;
-	if (CheckBit(control, CONTROL_BIT))
-	{
-		mask |= 0x01;
-	}
-	if (CheckBit(control, ALT_BIT))
-	{
-		mask |= 0x02;
-	}
-	if (CheckBit(control, SHIFT_BIT))
-	{
-		mask |= 0x04;
-	}
 	if (ascii == 0x90)
 	{
 		mask |= 0x08;
@@ -129,7 +96,6 @@ uint8_t GetControllerCode(uint8_t control, uint8_t ascii)
 	{
 		mask |= 0x80;
 	}
-
 	return mask;
 }
 
@@ -145,83 +111,87 @@ void __not_in_flash_func(ps2_ihandler)(void)
 
 		switch (code)
 		{
-		case CODE_EXTENDED:
-			// Extended code
+		case CODE_EXTENDED: // key-release code 0xE0
 			extended = 1;
 			break;
 		case CODE_RELEASED: // key-release code 0xF0
 			release = 1;	// release flag
-			break;
-		case 0x58: // Caps Lock?
-				   // caps lock, not handled for now
-			break;
-		case CODE_RIGHT_SHIFT: // Left-side shift
-		case CODE_LEFT_SHIFT:  // Right-side shift
-			shift = 1;
-			break;
-		case CODE_CONTROL: // Left or Right CNTL key (yep, same scancode)
-			control = 1;
-			break;
-		case CODE_ALT: // Left or Right ALT key (yep, same scancode)
-			alt = 1;
-			break;
-		default:
-			code &= 0x7F;
 			if (extended)
 			{
 				extended = 0;
 			}
-
-			if (control)
+			break;
+		case CODE_LEFT_SHIFT:  // Left-side shift
+		case CODE_RIGHT_SHIFT: // Right-side shift
+			shift = 1;
+			if (release)
 			{
-				ascii = ps2_to_ascii_cntl[code];
+				shift = 0;
+				release = 0;
 			}
-			else if (shift)
+			break;
+		case CODE_CONTROL: // Left or Right CNTL key (yep, same scancode)
+			control = 1;
+			if (release)
 			{
-				ascii = ps2_to_ascii_upper[code];
-			}
-			else
-			{
-				ascii = ps2_to_ascii_lower[code];
+				control = 0;
+				release = 0;
 			}
 
 			break;
+		case CODE_ALT: // Left or Right CNTL key (yep, same scancode)
+			alt = 1;
+			if (release)
+			{
+				alt = 0;
+				release = 0;
+			}
+			break;
+		default:
+			code &= 0x7F;
+			if (!release)
+			{
+				ascii = ps2_to_ascii_lower[code]; // default
+				if (control)
+				{
+					// ascii = ps2_to_ascii_cntl[code]; // Seems uxn doesn't use these. just use normal ones?
+					ascii = ps2_to_ascii_lower[code];
+				}
+				else if (shift)
+				{
+					ascii = ps2_to_ascii_upper[code];
+				}
+			}
+
+			release = 0;
+			extended = 0;
+			break;
 		}
 
-		// TODO: clean this all up. I think most control codes can go as nothing needs to be stored.
-		uint8_t controlFlags = 0;
-		controlFlags = SetBit(controlFlags, 7, 1); // always have 1 bit high for checking if an entry was there.
-		controlFlags = SetBit(controlFlags, EXTENDED_BIT, extended);
-		controlFlags = SetBit(controlFlags, SHIFT_BIT, shift);
-		controlFlags = SetBit(controlFlags, CONTROL_BIT, control);
-		controlFlags = SetBit(controlFlags, ALT_BIT, alt);
-		controlFlags = SetBit(controlFlags, RELEASE_BIT, releaseaction);
-
-		shift = 0;
-		alt = 0;
-		control = 0;
+		// Get the controller button, some like arrows are in ascii!
+		uint8_t controllerButton = GetControllerCode(ascii);
+		ascii = controllerButton ? 0 : ascii; // clear ascii if it was a controller button.
+		controllerButton |= control;
+		controllerButton |= (alt << 1);
+		controllerButton |= (shift << 1);
 
 		if (!release)
 		{
-			if (controlFlags != KEYBOARD_EVENT_IDLE || ascii != 0)
+			if (ascii)
 			{
-				uint8_t controllerCode = GetControllerCode(controlFlags, ascii);
-				if (CheckBit(controlFlags, RELEASE_BIT))
-				{
-					controller_up(controllerCode);
-				}
-				else if (!CheckBit(controlFlags, EXTENDED_BIT))
-				{
-					if (ascii)
-					{
-						controller_key(ascii);
-					}
-					controller_down(controllerCode);
-				}
+				controller_key(ascii);
+			}
+			else if (controllerButton)
+			{
+				storedControllerCode = controllerButton; // when released, the code needs to be send, hence it's stored
+				controller_down(storedControllerCode);
 			}
 		}
-		releaseaction = release;
-		release = 0;
+		else
+		{
+			controller_up(storedControllerCode);
+			storedControllerCode = 0;
+		}
 	}
 	pio_interrupt_clear(ps2_pio, 0);
 }

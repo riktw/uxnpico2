@@ -13,7 +13,7 @@ WITH REGARD TO THIS SOFTWARE.
 #include "../uxn11.h"
 #include "mouse.h"
 
-#include "../../ps2_shared.h"
+#include "ps2_shared.h"
 #include "hardware/dma.h"
 #include "pico/stdlib.h"
 

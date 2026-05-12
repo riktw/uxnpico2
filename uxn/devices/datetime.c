@@ -12,9 +12,9 @@ void SecondPasssed()
 	seconds++;
 	unsigned int ips = (instructionCount / seconds);
 	volatile uint32_t secs = seconds;
-	printf("Sec: %li ", secs);
-	printf("Instr: %i ", instructionCount);
-	printf("IPS: %li \n", ips);
+	// printf("Sec: %li ", secs);
+	// printf("Instr: %i ", instructionCount);
+	// printf("IPS: %li \n", ips);
 }
 
 void datetime_update()

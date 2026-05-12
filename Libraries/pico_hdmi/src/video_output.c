@@ -16,6 +16,7 @@
 #include "hardware/structs/hstx_fifo.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 // ============================================================================
@@ -27,21 +28,39 @@
 #define TMDS_CTRL_10 0x154u // vsync=1 hsync=0
 #define TMDS_CTRL_11 0x2abu // vsync=1 hsync=1
 
+// Map semantic "V asserted / V inactive" and "H asserted / H inactive" to TMDS bits.
+// Negative polarity (default, VIC 1 etc.): asserted = 0 on wire.
+// Positive polarity (720p60 VIC 4, etc.): asserted = 1 on wire.
+#ifdef MODE_SYNC_POSITIVE
+#define _TMDS_VON_HON TMDS_CTRL_11
+#define _TMDS_VON_HOFF TMDS_CTRL_10
+#define _TMDS_VOFF_HON TMDS_CTRL_01
+#define _TMDS_VOFF_HOFF TMDS_CTRL_00
+#else
+#define _TMDS_VON_HON TMDS_CTRL_00
+#define _TMDS_VON_HOFF TMDS_CTRL_01
+#define _TMDS_VOFF_HON TMDS_CTRL_10
+#define _TMDS_VOFF_HOFF TMDS_CTRL_11
+#endif
+
 // Sync symbols: Lane 0 carries sync, Lanes 1&2 are always CTRL_00
-#define SYNC_V0_H0 (TMDS_CTRL_00 | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
-#define SYNC_V0_H1 (TMDS_CTRL_01 | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
-#define SYNC_V1_H0 (TMDS_CTRL_10 | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
-#define SYNC_V1_H1 (TMDS_CTRL_11 | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
+// Naming: V0 = vsync asserted, V1 = vsync inactive; H0 = hsync asserted, H1 = hsync inactive
+#define SYNC_V0_H0 (_TMDS_VON_HON | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
+#define SYNC_V0_H1 (_TMDS_VON_HOFF | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
+#define SYNC_V1_H0 (_TMDS_VOFF_HON | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
+#define SYNC_V1_H1 (_TMDS_VOFF_HOFF | (TMDS_CTRL_00 << 10) | (TMDS_CTRL_00 << 20))
 
 // Data Island preamble: Lane 0 = sync, Lanes 1&2 = CTRL_01 pattern
 // Per HDMI 1.3a Table 5-2: CTL0=1, CTL1=0, CTL2=1, CTL3=0
-#define PREAMBLE_V0_H0 (TMDS_CTRL_00 | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_01 << 20))
-#define PREAMBLE_V1_H0 (TMDS_CTRL_10 | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_01 << 20))
+#define PREAMBLE_V0_H0 (_TMDS_VON_HON | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_01 << 20))
+#define PREAMBLE_V1_H0 (_TMDS_VOFF_HON | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_01 << 20))
+#define PREAMBLE_V0_H1 (_TMDS_VON_HOFF | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_01 << 20))
+#define PREAMBLE_V1_H1 (_TMDS_VOFF_HOFF | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_01 << 20))
 
 // Video preamble: Lane 0 = sync, Lane 1 = CTRL_01, Lane 2 = CTRL_00
 // Per HDMI 1.3a Table 5-2: CTL0=1, CTL1=0, CTL2=0, CTL3=0
-#define VIDEO_PREAMBLE_V0_H1 (TMDS_CTRL_01 | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_00 << 20))
-#define VIDEO_PREAMBLE_V1_H1 (TMDS_CTRL_11 | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_00 << 20))
+#define VIDEO_PREAMBLE_V0_H1 (_TMDS_VON_HOFF | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_00 << 20))
+#define VIDEO_PREAMBLE_V1_H1 (_TMDS_VOFF_HOFF | (TMDS_CTRL_01 << 10) | (TMDS_CTRL_00 << 20))
 
 // Video guard band: Per HDMI 1.3a Table 5-5
 // CH0 = 0b1011001100 (0x2CC), CH1 = 0b0100110011 (0x133), CH2 = 0b1011001100 (0x2CC)
@@ -53,7 +72,17 @@
 #define HSTX_CMD_TMDS_REPEAT (0x3u << 12)
 #define HSTX_CMD_NOP (0xfu << 12)
 
+// Data Island placement:
+//   - If hsync is wide enough (e.g. 640x480 hsync=96), place DI inside the hsync pulse.
+//     This is the original layout — DI is encoded with hsync_active=true.
+//   - Otherwise (e.g. 720p60 hsync=40), place DI in the back porch after hsync.
+//     DI is encoded with hsync_active=false.
+#if MODE_H_SYNC_WIDTH >= (W_PREAMBLE + W_DATA_ISLAND)
+#define DI_IN_HSYNC 1
 #define SYNC_AFTER_DI (MODE_H_SYNC_WIDTH - W_PREAMBLE - W_DATA_ISLAND)
+#else
+#define DI_IN_HSYNC 0
+#endif
 
 // Video preamble and guard band widths (HDMI 1.3a Section 5.2.2)
 #define W_VIDEO_PREAMBLE 8
@@ -126,6 +155,28 @@ static uint32_t vblank_infoframe_vsync_on[64], vblank_infoframe_vsync_on_len;
 static uint32_t vblank_infoframe_vsync_off[64], vblank_infoframe_vsync_off_len;
 static uint32_t vblank_avi_infoframe[64], vblank_avi_infoframe_len;
 
+#if defined(PICO_HDMI_DUMP_COMMAND_LISTS) && PICO_HDMI_DUMP_COMMAND_LISTS
+static void dump_command_list(const char *name, const uint32_t *words, uint32_t len)
+{
+    printf("pico_hdmi %s len=%lu", name, (unsigned long)len);
+    for (uint32_t i = 0; i < len; ++i) {
+        printf(" %08lx", (unsigned long)words[i]);
+    }
+    printf("\n");
+}
+
+static void dump_static_command_lists(void)
+{
+    printf("pico_hdmi mode h=%u,%u,%u,%u v=%u,%u,%u,%u hstx_clk_div=%u csr_clkdiv=%u di_in_hsync=%u\n",
+           MODE_H_FRONT_PORCH, MODE_H_SYNC_WIDTH, MODE_H_BACK_PORCH, MODE_H_ACTIVE_PIXELS, MODE_V_FRONT_PORCH,
+           MODE_V_SYNC_WIDTH, MODE_V_BACK_PORCH, MODE_V_ACTIVE_LINES, MODE_HSTX_CLK_DIV, MODE_HSTX_CSR_CLKDIV,
+           DI_IN_HSYNC);
+    dump_command_list("vblank_line_vsync_off", vblank_line_vsync_off, count_of(vblank_line_vsync_off));
+    dump_command_list("vblank_line_vsync_on", vblank_line_vsync_on, count_of(vblank_line_vsync_on));
+    dump_command_list("vactive_line_dvi", vactive_line_dvi, count_of(vactive_line_dvi));
+}
+#endif
+
 // ============================================================================
 // HSTX Resync - Reset output to sync with input VSYNC
 // ============================================================================
@@ -175,6 +226,9 @@ static uint32_t build_line_with_di(uint32_t *buf, const uint32_t *di_words, bool
     uint32_t *p = buf;
     uint32_t sync_h0 = vsync ? SYNC_V0_H0 : SYNC_V1_H0;
     uint32_t sync_h1 = vsync ? SYNC_V0_H1 : SYNC_V1_H1;
+
+#if DI_IN_HSYNC
+    // DI inside the hsync pulse (original layout, wide-hsync modes)
     uint32_t preamble = vsync ? PREAMBLE_V0_H0 : PREAMBLE_V1_H0;
 
     *p++ = HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH;
@@ -195,30 +249,74 @@ static uint32_t build_line_with_di(uint32_t *buf, const uint32_t *di_words, bool
     *p++ = HSTX_CMD_NOP;
 
     if (active) {
-        // HDMI 1.3a Section 5.2.2: Video Data Period requires preamble and guard band
         uint32_t video_preamble = vsync ? VIDEO_PREAMBLE_V0_H1 : VIDEO_PREAMBLE_V1_H1;
 
-        // Control period (back porch minus preamble and guard band)
         *p++ = HSTX_CMD_RAW_REPEAT | (MODE_H_BACK_PORCH - W_VIDEO_PREAMBLE - W_VIDEO_GUARD_BAND);
         *p++ = sync_h1;
         *p++ = HSTX_CMD_NOP;
 
-        // Video Preamble (8 pixels)
         *p++ = HSTX_CMD_RAW_REPEAT | W_VIDEO_PREAMBLE;
         *p++ = video_preamble;
         *p++ = HSTX_CMD_NOP;
 
-        // Video Guard Band (2 pixels)
         *p++ = HSTX_CMD_RAW_REPEAT | W_VIDEO_GUARD_BAND;
         *p++ = VIDEO_GUARD_BAND;
 
-        // Active video pixels
         *p++ = HSTX_CMD_TMDS | MODE_H_ACTIVE_PIXELS;
     } else {
         *p++ = HSTX_CMD_RAW_REPEAT | (MODE_H_BACK_PORCH + MODE_H_ACTIVE_PIXELS);
         *p++ = sync_h1;
         *p++ = HSTX_CMD_NOP;
     }
+#else
+    // DI in back porch, after hsync pulse (narrow-hsync modes like 720p60)
+    uint32_t preamble = vsync ? PREAMBLE_V0_H1 : PREAMBLE_V1_H1;
+
+    // Front porch
+    *p++ = HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH;
+    *p++ = sync_h1;
+    *p++ = HSTX_CMD_NOP;
+
+    // HSync pulse (clean, no embedded DI)
+    *p++ = HSTX_CMD_RAW_REPEAT | MODE_H_SYNC_WIDTH;
+    *p++ = sync_h0;
+    *p++ = HSTX_CMD_NOP;
+
+    // DI preamble (H inactive, lanes 1&2 = CTRL_01)
+    *p++ = HSTX_CMD_RAW_REPEAT | W_PREAMBLE;
+    *p++ = preamble;
+    *p++ = HSTX_CMD_NOP;
+
+    // DI packet
+    *p++ = HSTX_CMD_RAW | W_DATA_ISLAND;
+    for (int i = 0; i < W_DATA_ISLAND; i++)
+        *p++ = di_words[i];
+    *p++ = HSTX_CMD_NOP;
+
+    if (active) {
+        uint32_t video_preamble = vsync ? VIDEO_PREAMBLE_V0_H1 : VIDEO_PREAMBLE_V1_H1;
+
+        // Remainder of back porch before video preamble
+        *p++ = HSTX_CMD_RAW_REPEAT |
+               (MODE_H_BACK_PORCH - W_PREAMBLE - W_DATA_ISLAND - W_VIDEO_PREAMBLE - W_VIDEO_GUARD_BAND);
+        *p++ = sync_h1;
+        *p++ = HSTX_CMD_NOP;
+
+        *p++ = HSTX_CMD_RAW_REPEAT | W_VIDEO_PREAMBLE;
+        *p++ = video_preamble;
+        *p++ = HSTX_CMD_NOP;
+
+        *p++ = HSTX_CMD_RAW_REPEAT | W_VIDEO_GUARD_BAND;
+        *p++ = VIDEO_GUARD_BAND;
+
+        *p++ = HSTX_CMD_TMDS | MODE_H_ACTIVE_PIXELS;
+    } else {
+        // Remainder of back porch + full active area as control period
+        *p++ = HSTX_CMD_RAW_REPEAT | (MODE_H_BACK_PORCH - W_PREAMBLE - W_DATA_ISLAND + MODE_H_ACTIVE_PIXELS);
+        *p++ = sync_h1;
+        *p++ = HSTX_CMD_NOP;
+    }
+#endif
     return (uint32_t)(p - buf);
 }
 
@@ -348,7 +446,7 @@ static inline void __scratch_x("") video_output_handle_active_data(dma_channel_h
 // DMA IRQ Handler
 // ============================================================================
 
-void __scratch_x("") dma_irq_handler()
+static void __scratch_x("") dma_irq_handler()
 {
     uint32_t ch_num = dma_pong ? DMACH_PONG : DMACH_PING;
     dma_channel_hw_t *ch = &dma_hw->ch[ch_num];
@@ -382,48 +480,49 @@ void __scratch_x("") dma_irq_handler()
 // Public Interface
 // ============================================================================
 
-// ACR N/CTS lookup for 25.2 MHz pixel clock (HDMI spec Table 7-1/7-2)
-static void get_acr_params(uint32_t sample_rate, uint32_t *n, uint32_t *cts)
+// ACR N values from HDMI spec Table 7-1; CTS computed from actual pixel clock.
+// Formula: f_audio = f_TMDS * N / (128 * CTS)  =>  CTS = f_TMDS * N / (128 * f_audio)
+static uint32_t get_acr_n(uint32_t sample_rate)
 {
     switch (sample_rate) {
         case 32000:
-            *n = 4096;
-            *cts = 25200;
-            break;
+            return 4096;
         case 44100:
-            *n = 6272;
-            *cts = 28000;
-            break;
+            return 6272;
         case 48000:
-            *n = 6144;
-            *cts = 25200;
-            break;
+            return 6144;
         case 88200:
-            *n = 12544;
-            *cts = 28000;
-            break;
+            return 12544;
         case 96000:
-            *n = 12288;
-            *cts = 25200;
-            break;
+            return 12288;
         case 176400:
-            *n = 25088;
-            *cts = 28000;
-            break;
+            return 25088;
         case 192000:
-            *n = 24576;
-            *cts = 25200;
-            break;
+            return 24576;
         default:
-            *n = 6144;
-            *cts = 25200;
-            break; // fallback to 48kHz
+            return 6144; // fallback to 48kHz
     }
+}
+
+static void get_acr_params(uint32_t sample_rate, uint32_t *n, uint32_t *cts)
+{
+    *n = get_acr_n(sample_rate);
+    uint32_t pixel_clock = clock_get_hz(clk_hstx) / MODE_HSTX_CSR_CLKDIV;
+    *cts = (uint32_t)(((uint64_t)pixel_clock * *n) / (128ULL * sample_rate));
 }
 
 static void configure_audio_packets(uint32_t sample_rate)
 {
     hstx_di_queue_set_sample_rate(sample_rate);
+
+    // Derive the audio packet cadence from the actual pixel clock instead of
+    // assuming exactly 60.000 Hz. 720p currently runs from 372 MHz sys_clk
+    // (74.4 MHz pixel clock), so frame rate is slightly above nominal CEA 60 Hz.
+    // ACR still advertises 48 kHz; if we also emit 800 samples every video
+    // frame, stricter sinks eventually overflow their audio clock domain.
+    uint32_t pixel_clock_hz = clock_get_hz(clk_hstx) / MODE_HSTX_CSR_CLKDIV;
+    uint32_t spl_fp = (uint32_t)(((uint64_t)sample_rate * MODE_H_TOTAL_PIXELS << 16) / pixel_clock_hz);
+    hstx_di_queue_set_samples_per_line_fp(spl_fp);
 
     hstx_packet_t packet;
     hstx_data_island_t island;
@@ -432,15 +531,15 @@ static void configure_audio_packets(uint32_t sample_rate)
     uint32_t acr_cts;
     get_acr_params(sample_rate, &acr_n, &acr_cts);
     hstx_packet_set_acr(&packet, acr_n, acr_cts);
-    hstx_encode_data_island(&island, &packet, true, true);
+    hstx_encode_data_island(&island, &packet, true, DI_HSYNC_ACTIVE);
     vblank_acr_vsync_on_len = build_line_with_di(vblank_acr_vsync_on, island.words, true, false);
-    hstx_encode_data_island(&island, &packet, false, true);
+    hstx_encode_data_island(&island, &packet, false, DI_HSYNC_ACTIVE);
     vblank_acr_vsync_off_len = build_line_with_di(vblank_acr_vsync_off, island.words, false, false);
 
     hstx_packet_set_audio_infoframe(&packet, sample_rate, 2, 16);
-    hstx_encode_data_island(&island, &packet, true, true);
+    hstx_encode_data_island(&island, &packet, true, DI_HSYNC_ACTIVE);
     vblank_infoframe_vsync_on_len = build_line_with_di(vblank_infoframe_vsync_on, island.words, true, false);
-    hstx_encode_data_island(&island, &packet, false, true);
+    hstx_encode_data_island(&island, &packet, false, DI_HSYNC_ACTIVE);
     vblank_infoframe_vsync_off_len = build_line_with_di(vblank_infoframe_vsync_off, island.words, false, false);
 }
 
@@ -448,6 +547,10 @@ void video_output_init(uint16_t width, uint16_t height)
 {
     frame_width = width;
     frame_height = height;
+
+#if defined(PICO_HDMI_DUMP_COMMAND_LISTS) && PICO_HDMI_DUMP_COMMAND_LISTS
+    dump_static_command_lists();
+#endif
 
     // Configure clk_hstx for the current video mode
     // After set_sys_clock_khz(), clk_hstx needs to be reconfigured
@@ -470,16 +573,18 @@ void video_output_init(uint16_t width, uint16_t height)
     hstx_packet_t packet;
     hstx_data_island_t island;
 
-    // VIC=1 for standard 640x480, VIC=0 for non-standard timings (e.g. 240p)
-    uint8_t vic = (height == 480) ? 1 : 0;
+    // VIC=1 for 640x480, VIC=4 for 720p60, VIC=0 for non-standard timings (e.g. 240p)
+    uint8_t vic = (height == 480) ? 1 : (height == 720) ? 4 : 0;
     hstx_packet_set_avi_infoframe(&packet, vic, 0);
-    hstx_encode_data_island(&island, &packet, false, true);
+    hstx_encode_data_island(&island, &packet, false, DI_HSYNC_ACTIVE);
     vblank_avi_infoframe_len = build_line_with_di(vblank_avi_infoframe, island.words, false, false);
 
-    vblank_di_null_len = build_line_with_di(vblank_di_null, hstx_get_null_data_island(false, true), false, false);
-    vactive_di_null_len = build_line_with_di(vactive_di_null, hstx_get_null_data_island(false, true), false, true);
+    vblank_di_null_len =
+        build_line_with_di(vblank_di_null, hstx_get_null_data_island(false, DI_HSYNC_ACTIVE), false, false);
+    vactive_di_null_len =
+        build_line_with_di(vactive_di_null, hstx_get_null_data_island(false, DI_HSYNC_ACTIVE), false, true);
 
-    vblank_di_len = build_line_with_di(vblank_di_ping, hstx_get_null_data_island(false, true), false, false);
+    vblank_di_len = build_line_with_di(vblank_di_ping, hstx_get_null_data_island(false, DI_HSYNC_ACTIVE), false, false);
     memcpy(vblank_di_pong, vblank_di_ping, sizeof(vblank_di_ping));
 }
 
@@ -513,7 +618,7 @@ void video_output_core1_run(void)
     // HSTX Hardware Setup
     hstx_ctrl_hw->expand_tmds = 4 << HSTX_CTRL_EXPAND_TMDS_L2_NBITS_LSB | 8 << HSTX_CTRL_EXPAND_TMDS_L2_ROT_LSB |
                                 5 << HSTX_CTRL_EXPAND_TMDS_L1_NBITS_LSB | 3 << HSTX_CTRL_EXPAND_TMDS_L1_ROT_LSB |
-                                4 << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB | 13 << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
+                                4 << HSTX_CTRL_EXPAND_TMDS_L0_NBITS_LSB | 29 << HSTX_CTRL_EXPAND_TMDS_L0_ROT_LSB;
 
     hstx_ctrl_hw->expand_shift =
         2 << HSTX_CTRL_EXPAND_SHIFT_ENC_N_SHIFTS_LSB | 16 << HSTX_CTRL_EXPAND_SHIFT_ENC_SHIFT_LSB |
@@ -523,33 +628,36 @@ void video_output_core1_run(void)
     hstx_ctrl_hw->csr = HSTX_CTRL_CSR_EXPAND_EN_BITS | (uint32_t)MODE_HSTX_CSR_CLKDIV << HSTX_CTRL_CSR_CLKDIV_LSB |
                         5U << HSTX_CTRL_CSR_N_SHIFTS_LSB | 2U << HSTX_CTRL_CSR_SHIFT_LSB | HSTX_CTRL_CSR_EN_BITS;
 
+    // HSTX outputs 0 through 7 appear on GPIO 12 through 19.
+    // Pinout on Pico DVI sock:
+    //
     //   GP12 D0+  GP13 D0-
     //   GP14 CK+  GP15 CK-
     //   GP16 D2+  GP17 D2-
     //   GP18 D1+  GP19 D1-
 
     // Assign clock pair to two neighbouring pins:
-    hstx_ctrl_hw->bit[1] = HSTX_CTRL_BIT0_CLK_BITS;
-    hstx_ctrl_hw->bit[0] = HSTX_CTRL_BIT0_CLK_BITS | HSTX_CTRL_BIT0_INV_BITS;
-    for (uint lane = 0; lane < 3; ++lane)
-    {
+    hstx_ctrl_hw->bit[2] = HSTX_CTRL_BIT0_CLK_BITS;
+    hstx_ctrl_hw->bit[3] = HSTX_CTRL_BIT0_CLK_BITS | HSTX_CTRL_BIT0_INV_BITS;
+    for (uint lane = 0; lane < 3; ++lane) {
         // For each TMDS lane, assign it to the correct GPIO pair based on the
         // desired pinout:
-        static const int lane_to_output_bit[3] = {2, 4, 6};
+        static const int lane_to_output_bit[3] = {0, 6, 4};
         int bit = lane_to_output_bit[lane];
         // Output even bits during first half of each HSTX cycle, and odd bits
         // during second half. The shifter advances by two bits each cycle.
-        uint32_t lane_data_sel_bits =
-            (lane * 10) << HSTX_CTRL_BIT0_SEL_P_LSB |
-            (lane * 10 + 1) << HSTX_CTRL_BIT0_SEL_N_LSB;
+        uint32_t lane_data_sel_bits = (lane * 10) << HSTX_CTRL_BIT0_SEL_P_LSB | (lane * 10 + 1)
+                                                                                    << HSTX_CTRL_BIT0_SEL_N_LSB;
         // The two halves of each pair get identical data, but one pin is inverted.
-        hstx_ctrl_hw->bit[bit + 1] = lane_data_sel_bits;
-        hstx_ctrl_hw->bit[bit + 0] = lane_data_sel_bits | HSTX_CTRL_BIT0_INV_BITS;
+        hstx_ctrl_hw->bit[bit] = lane_data_sel_bits;
+        hstx_ctrl_hw->bit[bit + 1] = lane_data_sel_bits | HSTX_CTRL_BIT0_INV_BITS;
     }
 
-    for (int i = 12; i <= 19; ++i)
-    {
-        gpio_set_function(i, 0); // HSTX
+    // Set GPIO 12-19 to HSTX function (function 0 on RP2350)
+    for (int i = PIN_HSTX_CLK; i <= PIN_HSTX_D2 + 1; ++i) {
+        gpio_set_function(i, 0);
+        gpio_set_slew_rate(i, GPIO_SLEW_RATE_FAST);
+        gpio_set_drive_strength(i, GPIO_DRIVE_STRENGTH_12MA);
     }
 
     // DMA Setup
