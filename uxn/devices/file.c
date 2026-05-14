@@ -89,7 +89,10 @@ Uint16 file_read(UxnFile *c, void *dest, Uint16 len)
 			c->state = FILE_READ;
 	}
 	if (c->state == FILE_READ)
-		return f_read(&c->f, dest, len, &bytesRead);
+	{
+		f_read(&c->f, dest, len, &bytesRead);
+		return bytesRead;
+	}
 	if (c->state == DIR_READ)
 		return file_read_dir(c, dest, len);
 	return 0;
@@ -109,7 +112,7 @@ Uint16 file_write(UxnFile *c, void *src, Uint16 len, Uint8 flags)
 	{
 		if (FR_OK == f_write(&c->f, src, len, &bytesWritten))
 			if (f_sync(&c->f) == FR_OK)
-				ret = 0;
+				ret = bytesWritten;
 	}
 	return ret;
 }
