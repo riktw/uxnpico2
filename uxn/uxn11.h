@@ -47,11 +47,7 @@ typedef struct Uxn
 
 void SecondPasssed();
 void screen_update(void);
-
-void controller_down(Uint8 mask);
-void controller_up(Uint8 mask);
-void controller_key(Uint8 key);
-
+unsigned int console_input(int c, unsigned int type);
 int uxn_boot(Uxn11 *u, Uint8 *ram);
 int uxn_init();
 unsigned int uxn_eval(Uint16 pc);

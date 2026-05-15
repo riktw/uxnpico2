@@ -41,9 +41,9 @@ pico_set_program_name(uxn_rpi "uxn_rpi")
 pico_set_program_version(uxn_rpi "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(uxn_rpi 0)
+pico_enable_stdio_uart(uxn_rpi 1)
 pico_enable_stdio_usb(uxn_rpi 0)
-pico_enable_stdio_rtt(uxn_rpi 1)
+pico_enable_stdio_rtt(uxn_rpi 0)
 
 pico_generate_pio_header(uxn_rpi ${CMAKE_CURRENT_LIST_DIR}/ps2/ps2_input.pio)
 
