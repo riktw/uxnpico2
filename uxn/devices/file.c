@@ -37,6 +37,20 @@ static Uint16 get_entry(char *p, Uint16 len, const char *pathname, const char *b
 		return sprintf(p, "???? %s\n", basename);
 }
 
+static Uint16 get_stat(char *p, Uint16 len, const char *pathname)
+{
+	FILINFO st;
+	if (f_stat(pathname, &st))
+		snprintf(p, len + 1, "!!!!");
+	else if (st.fattrib == AM_DIR)
+		snprintf(p, len + 1, "----");
+	else if (st.fsize < 0x10000)
+		snprintf(p, len + 1, "%04x", (unsigned int)st.fsize);
+	else
+		snprintf(p, len + 1, "????");
+	return len;
+}
+
 static Uint16 file_read_dir(UxnFile *c, char *dest, Uint16 len)
 {
 	static char pathname[4356];
@@ -44,7 +58,7 @@ static Uint16 file_read_dir(UxnFile *c, char *dest, Uint16 len)
 	char *p = dest;
 	f_readdir(&c->dir, &st);
 
-	for (; st.fname != NULL; f_readdir(&c->dir, &st))
+	for (; st.fname[0] != '\0'; f_readdir(&c->dir, &st))
 	{
 		Uint16 n;
 		if (st.fname[0] == '.' && st.fname[1] == '\0')
@@ -124,12 +138,16 @@ Uint16 file_stat(UxnFile *c, void *dest, Uint16 len)
 		basename++;
 	else
 		basename = c->current_filename;
-	return get_entry(dest, len, c->current_filename, basename, 0);
+	return get_stat(dest, len, c->current_filename);
 }
 
 Uint16 file_delete(UxnFile *c)
 {
-	return f_unlink(c->current_filename);
+	if (f_unlink(c->current_filename) == FR_OK)
+	{
+		return 1;
+	}
+	return 0;
 }
 
 /* Boot */
@@ -169,7 +187,9 @@ void unmount()
 
 void filea_deo_stat(void)
 {
-	poke2(&dev[0xa2], file_stat(&ufs[0], &ram[peek2(&dev[0xa4])], rL1));
+	int location = peek2(&dev[0xa4]);
+	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
+	poke2(&dev[0xa2], file_stat(&ufs[0], &ram[location], length));
 }
 
 void filea_deo_delete(void)
@@ -189,10 +209,14 @@ void filea_deo_length(void)
 
 void filea_deo_read(void)
 {
-	poke2(&dev[0xa2], file_read(&ufs[0], &ram[peek2(&dev[0xac])], rL1));
+	int location = peek2(&dev[0xac]);
+	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
+	poke2(&dev[0xa2], file_read(&ufs[0], &ram[location], length));
 }
 
 void filea_deo_write(void)
 {
-	poke2(&dev[0xa2], file_write(&ufs[0], &ram[peek2(&dev[0xae])], rL1, dev[0xa7]));
+	int location = peek2(&dev[0xae]);
+	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
+	poke2(&dev[0xa2], file_write(&ufs[0], &ram[location], length, dev[0xa7]));
 }
