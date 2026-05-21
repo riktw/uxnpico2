@@ -35,7 +35,7 @@ pico_sdk_init()
 add_subdirectory(${CMAKE_SOURCE_DIR}/Libraries/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/src build)
 add_subdirectory(${CMAKE_SOURCE_DIR}/Libraries/pico_hdmi)
 
-add_executable(uxn_rpi uxn_rpi.c core1.c uxn/uxn11.c uxn/devices/file.c uxn/devices/datetime.c uxn/devices/screen.c uxn/devices/mouse.c uxn/devices/controller.c ps2/ps2_shared.c hw_config.c)
+add_executable(uxn_rpi uxn_rpi.c core1.c uxn/uxn11.c uxn/devices/file.c uxn/devices/datetime.c uxn/devices/screen.c uxn/devices/mouse.c uxn/devices/controller.c uxn/devices/console.c ps2/ps2_shared.c hw_config.c)
 
 pico_set_program_name(uxn_rpi "uxn_rpi")
 pico_set_program_version(uxn_rpi "0.1")

@@ -17,6 +17,8 @@ static int uxnWidth = UXN_WIDTH;
 
 static char __attribute__((aligned(4), section(".ram_fb"))) uxnbuf[(UXN_HEIGHT * UXN_WIDTH) / 2] = {0};
 
+static screen_update_callback_t vsync_callback = NULL;
+
 // Precalculate a 256 entry LUT for doing 2 pixels in one go!
 static uint32_t palette[256];
 void core1_setPalette(uint16_t color[4])
@@ -143,7 +145,7 @@ void __scratch_x("") scanline_callback(uint32_t v_scanline, uint32_t active_line
     }
 }
 
-void core1_init(void)
+void core1_init(screen_update_callback_t callback)
 {
     memset(uxnbuf, 0x00, sizeof(uxnbuf));
     // Initialize HDMI output
@@ -151,6 +153,7 @@ void core1_init(void)
     video_output_set_dvi_mode(true);
     video_output_init(640, 480);
     video_output_set_scanline_callback(scanline_callback);
+    video_output_set_vsync_callback(callback);
 
     multicore_launch_core1(video_output_core1_run);
 }

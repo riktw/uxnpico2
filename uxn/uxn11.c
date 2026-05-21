@@ -97,33 +97,7 @@ static void system_deo_rst(void) { ptr[1] = dev[5]; }
 
 /*
 @|Console ----------------------------------------------------------- */
-
-#define CONSOLE_STD 0x1
-#define CONSOLE_ARG 0x2
-#define CONSOLE_EOA 0x3
-#define CONSOLE_END 0x4
-
-unsigned int console_input(int c, unsigned int type)
-{
-	if (c == EOF)
-		c = 0, type = CONSOLE_END;
-	dev[0x12] = c, dev[0x17] = type;
-	if (console_vector)
-		uxn_eval(console_vector);
-	return type != CONSOLE_END;
-}
-
-/* clang-format off */
-#include "hardware/uart.h"
-//static Uint8 console_dei_childlive(void) { check_child(); return dev[CMD_LIVE]; }
-//static Uint8 console_dei_childexit(void) { check_child(); return dev[CMD_EXIT]; }
-static void console_deo_vector(void) { console_vector = peek2(&dev[0x10]); }
-static void console_deo_stdout(void) { uart_putc(uart0, dev[0x18]); }
-static void console_deo_stderr(void) { uart_putc(uart0, dev[0x19]); }
-//static void console_deo_hb(void) { fprintf(stderr, "%02x", dev[0x1a]); }
-//static void console_deo_lb(void) { fprintf(stderr, "%02x", dev[0x1b]); }
-
-/* clang-format on */
+#include "devices/console.h"
 
 /*
 @|Screen ------------------------------------------------------------ */
@@ -331,6 +305,7 @@ int uxn_init()
 {
 	initPS2Mouse(6);
 	initPS2Keyboard(8);
+	InitConsole(uart0, 0, 1, 115200);
 }
 
 int uxn_load_rom(char *filename)
