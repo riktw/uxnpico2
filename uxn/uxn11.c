@@ -20,80 +20,15 @@ WITH REGARD TO THIS SOFTWARE.
 cc -DNDEBUG -O2 -g0 -s src/uxn11.c -lX11 -lutil -o bin/uxn11
 */
 
-Uint8 ram[0x10000], dev[0x100], stk[2][0x100], ptr[2];
+Uint8 ram[BANKS_CAP], dev[0x100], stk[2][0x100], ptr[2];
 static int console_vector, screen_vector, controller_vector;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
 
 uint32_t instructionCount = 0;
 
-/* clang-format off */
-
-#define BANKS 0x10
-#define BANKS_CAP BANKS * 0x10000
-#define WIDTH (64 * 8)
-#define HEIGHT (45 * 8)
-
-/* clang-format on */
-
 /*
 @|System ------------------------------------------------------------ */
-
-static char *system_boot_path;
-
-/* TODO
-static void system_print(char *name, int r)
-{
-	Uint8 i;
-	fprintf(stderr, "%s%c", name, ptr[r] - 8 ? ' ' : '|');
-	for(i = ptr[r] - 8; i != ptr[r]; i++)
-		fprintf(stderr, "%02x%c", stk[r][i], i == 0xff ? '|' : ' ');
-	fprintf(stderr, "<%02x\n", ptr[r]);
-}
-
-static unsigned int system_load(const char *rom_path)
-{
-	FILE *f = fopen(rom_path, "rb");
-	if(f) {
-		unsigned int i = 0, l = fread(ram + 0x100, 0x10000 - 0x100, 1, f);
-		while(l && ++i < BANKS)
-			l = fread(ram + i * 0x10000, 0x10000, 1, f);
-		fclose(f);
-	}
-	return !!f;
-}
-	*/
-
-static unsigned int system_boot(char *rom_path, const unsigned int has_args)
-{
-	system_boot_path = rom_path;
-	dev[0x17] = has_args;
-	return 0; // ram;// && system_load(rom_path);
-}
-
-static unsigned int system_reboot(const unsigned int soft)
-{
-	memset(dev, 0, 0x100);
-	memset(stk[0], 0, 0x100);
-	memset(stk[1], 0, 0x100);
-	if (soft)
-		memset(ram + 0x100, 0, 0xff00);
-	else
-		memset(ram, 0, 0x10000);
-	ptr[0] = ptr[1] = 0;
-	console_vector = screen_vector = controller_vector = 0;
-	rX = rY = rA = rMX = rMY = rMA = rML = rDX = rDY = rL1 = rL2 = 0;
-	return uxn_load_rom(system_boot_path);
-}
-
-/* clang-format off */
-
-static Uint8 system_dei_wst(void) { return ptr[0]; }
-static Uint8 system_dei_rst(void) { return ptr[1]; }
-static void system_deo_wst(void) { ptr[0] = dev[4]; }
-static void system_deo_rst(void) { ptr[1] = dev[5]; }
-//static void system_deo_print(void) { system_print("WST", 0), system_print("RST", 1); }
-
-/* clang-format on */
+#include "devices/system.h"
 
 /*
 @|Console ----------------------------------------------------------- */
@@ -110,7 +45,6 @@ void screen_update(void)
 	{
 		uxn_eval(screen_vector);
 	}
-	screen_run_update();
 }
 
 /*
@@ -170,6 +104,7 @@ static const dei_handler dei_handlers[256] = {
 };
 
 static const deo_handler deo_handlers[256] = {
+	[0x03] = system_deo_expansion,
 	[0x04] = system_deo_wst,
 	[0x05] = system_deo_rst,
 	[0x08] = system_deo_colorize,
@@ -178,12 +113,12 @@ static const deo_handler deo_handlers[256] = {
 	[0x0b] = system_deo_colorize,
 	[0x0c] = system_deo_colorize,
 	[0x0d] = system_deo_colorize,
-	//[0x0e] = system_deo_print,
+	[0x0e] = system_deo_print,
 	[0x11] = console_deo_vector,
 	[0x18] = console_deo_stdout,
 	[0x19] = console_deo_stderr,
-	//[0x1a] = console_deo_hb,
-	//[0x1b] = console_deo_lb,
+	[0x1a] = console_deo_hb,
+	[0x1b] = console_deo_lb,
 	[0x21] = screen_deo_vector,
 	[0x23] = screen_deo_width,
 	[0x25] = screen_deo_height,

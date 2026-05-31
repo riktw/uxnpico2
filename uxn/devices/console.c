@@ -67,3 +67,12 @@ void console_deo_stderr(void)
 {
     uart_putc(uartInstance, dev[0x19]);
 }
+
+void console_deo_hb(void)
+{
+    printf("%02x", dev[0x1a]);
+}
+void console_deo_lb(void)
+{
+    printf("%02x", dev[0x1b]);
+}

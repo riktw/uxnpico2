@@ -1,6 +1,8 @@
-#include <stdio.h>
-
-#include "../uxn.h"
+#include "console.h"
+#include "stdio.h"
+#include "string.h"
+#include "pico/stdlib.h"
+#include "../uxn11.h"
 #include "system.h"
 
 /*
@@ -23,52 +25,60 @@ static const char *errors[] = {
 	"Return-stack division by zero",
 	"Execution timeout"};
 
-static void
-system_print(Stack *s, char *name)
+extern Uint8 dev[0x100];
+extern Uint8 ptr[2];
+extern Uint8 stk[2][0x100];
+extern Uint8 ram[BANKS_CAP];
+
+static void system_print(char *name, int r)
 {
 	Uint8 i;
-	fprintf(stderr, "<%s>", name);
-	for(i = 0; i < s->ptr; i++)
-		fprintf(stderr, " %02x", s->dat[i]);
-	if(!i)
-		fprintf(stderr, " empty");
-	fprintf(stderr, "\n");
+	printf("%s%c", name, ptr[r] - 8 ? ' ' : '|');
+	for (i = ptr[r] - 8; i != ptr[r]; i++)
+		printf("%02x%c", stk[r][i], i == 0xff ? '|' : ' ');
+	printf("<%02x\n", ptr[r]);
 }
 
-void
-system_inspect(Uxn *u)
+void system_deo_expansion(void)
 {
-	system_print(&u->wst, "wst");
-	system_print(&u->rst, "rst");
-}
-
-int
-uxn_halt(Uxn *u, Uint8 error, Uint16 addr)
-{
-	system_inspect(u);
-	fprintf(stderr, "Halted: %s#%04x, at 0x%04x\n", errors[error], u->ram[addr], addr);
-	return 0;
-}
-
-/* IO */
-
-Uint8
-system_dei(Device *d, Uint8 port)
-{
-	switch(port) {
-	case 0x2: return d->u->wst.ptr;
-	case 0x3: return d->u->rst.ptr;
-	default: return d->dat[port];
+	const Uint16 exp = peek2(dev + 2);
+	Uint8 *aptr = ram + exp;
+	Uint16 length = peek2(aptr + 1);
+	unsigned int bank = peek2(aptr + 3) * 0x10000;
+	unsigned int addr = peek2(aptr + 5);
+	if (ram[exp] == 0x0)
+	{
+		if (bank < BANKS_CAP)
+			memset(ram + bank + addr, ram[exp + 7], length);
 	}
+	else if (ram[exp] == 1 || ram[exp] == 2)
+	{
+		unsigned int dst_bank = peek2(aptr + 7) * 0x10000;
+		unsigned int dst_addr = peek2(aptr + 9);
+		if (bank < BANKS_CAP && dst_bank < BANKS_CAP)
+			memmove(ram + dst_bank + dst_addr, ram + bank + addr, length);
+	}
+	else
+		printf("Unknown command: %s\n", &ram[exp]);
 }
 
-void
-system_deo(Device *d, Uint8 port)
+Uint8 system_dei_wst(void)
 {
-	switch(port) {
-	case 0x2: d->u->wst.ptr = d->dat[port]; break;
-	case 0x3: d->u->rst.ptr = d->dat[port]; break;
-	case 0xe: system_inspect(d->u); break;
-	default: system_deo_special(d, port);
-	}
+	return ptr[0];
+}
+Uint8 system_dei_rst(void)
+{
+	return ptr[1];
+}
+void system_deo_wst(void)
+{
+	ptr[0] = dev[4];
+}
+void system_deo_rst(void)
+{
+	ptr[1] = dev[5];
+}
+void system_deo_print(void)
+{
+	system_print("WST", 0), system_print("RST", 1);
 }

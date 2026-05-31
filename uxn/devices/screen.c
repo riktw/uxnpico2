@@ -1,15 +1,16 @@
 #include <stdint-gcc.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "screen.h"
+#include "../uxn11.h"
 #include "../core1.h"
 
 static int screen_vector;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
-extern Uint8 ram[0x10000];
+extern Uint8 ram[BANKS_CAP];
 extern Uint8 dev[0x100];
 
-static int screen_zoom = 1, screen_reqsize, screen_reqdraw;
 static int screen_width, screen_height, screen_wmar2, screen_hmar2;
 static int screen_width_offset, screen_height_offset;
 static int screen_x1, screen_y1, screen_x2, screen_y2;
@@ -36,10 +37,10 @@ static const Uint8 alpha_lut[16] = {0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4,
 
 static void screen_change(const int x1, const int y1, const int x2, const int y2)
 {
-	screen_x1 = x1 < screen_x1 ? x1 : screen_x1;
-	screen_y1 = y1 < screen_y1 ? y1 : screen_y1;
-	screen_x2 = x2 > screen_x2 ? x2 : screen_x2;
-	screen_y2 = y2 > screen_y2 ? y2 : screen_y2;
+	screen_x1 = x1;
+	screen_y1 = y1;
+	screen_x2 = x2;
+	screen_y2 = y2;
 }
 
 void system_deo_colorize(void)
@@ -67,7 +68,6 @@ void screen_resize(int width, int height)
 		screen_height = height, screen_hmar2 = height + 0x10;
 		poke2(&dev[0x24], screen_height);
 		core1_setResolution(screen_hmar2, screen_wmar2);
-		screen_reqsize = screen_reqdraw = 1;
 
 		screen_width_offset = (UXN_WIDTH - screen_width) / 2;
 		screen_height_offset = (UXN_HEIGHT - screen_height) / 2;
@@ -89,26 +89,6 @@ int screen_get_vector(void)
 	return screen_vector;
 }
 
-void screen_run_update(void)
-{
-	if (screen_reqsize)
-	{
-	}
-	if (screen_reqdraw)
-	{
-		screen_x1 = screen_y1 = 0;
-		screen_x2 = screen_width;
-		screen_y2 = screen_height;
-	}
-	else if (screen_x2 > screen_x1 && screen_y2 > screen_y1)
-	{
-		CLAMP(screen_x1, 0, screen_width);
-		CLAMP(screen_y1, 0, screen_height);
-		CLAMP(screen_x2, 0, screen_width);
-		CLAMP(screen_y2, 0, screen_height);
-	}
-}
-#include <stdio.h>
 void screen_deo_pixel(void)
 {
 	const int ctrl = dev[0x2e];
@@ -126,7 +106,7 @@ void screen_deo_pixel(void)
 
 		core1_fillPixels(x1 + screen_width_offset, x2 + screen_width_offset + UXN_PADDING, y1 + screen_height_offset, y2 + screen_height_offset + UXN_PADDING, mask, color);
 
-		screen_reqdraw = 1;
+		screen_change(x1, y1, x2, y2);
 	}
 	// pixel mode
 	else
@@ -135,7 +115,7 @@ void screen_deo_pixel(void)
 		if (x < screen_width && y < screen_height)
 		{
 			core1_setPixel(x + (UXN_PADDING / 2) + screen_width_offset, y + (UXN_PADDING / 2) + screen_height_offset, mask, color);
-			screen_reqdraw = 1;
+			screen_change(x, y, x + 1, y + 1);
 		}
 		if (rMX)
 			rX++;
@@ -175,12 +155,11 @@ void screen_deo_sprite(void)
 			}
 		}
 	}
-	if (!screen_reqdraw)
-	{
-		int x1 = flipx ? x : rX, x2 = flipx ? rX : x;
-		int y1 = flipy ? y : rY, y2 = flipy ? rY : y;
-		screen_change(x1 - 8, y1 - 8, x2 + 8, y2 + 8);
-	}
+
+	int x1 = flipx ? x : rX, x2 = flipx ? rX : x;
+	int y1 = flipy ? y : rY, y2 = flipy ? rY : y;
+	screen_change(x1 - 8, y1 - 8, x2 + 8, y2 + 8);
+
 	if (rMX)
 		rX += flipx ? -rDX : rDX;
 	if (rMY)

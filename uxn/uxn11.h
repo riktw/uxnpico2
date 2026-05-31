@@ -15,6 +15,11 @@ WITH REGARD TO THIS SOFTWARE.
 #include "uxntypes.h"
 
 #define PAGE_PROGRAM 0x0100
+#define BANK_SIZE 0x10000
+#define BANKS 0x2
+#define BANKS_CAP BANKS *BANK_SIZE
+#define WIDTH (64 * 8)
+#define HEIGHT (45 * 8)
 
 /* clang-format off */
 

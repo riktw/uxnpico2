@@ -39,9 +39,6 @@ static void run()
 
 /*
     TODO:
-    - fix console properly
-    - go over any missing implementations in uxn11.
-    - Check with latest uxn11 to see what's updated.
     - optimize some
 
     When pc board arrives:

@@ -8,7 +8,7 @@
 static FATFS fs;
 static FIL fp;
 
-extern Uint8 ram[0x10000];
+extern Uint8 ram[BANKS_CAP];
 extern Uint8 dev[0x100];
 static UxnFile ufs[2];
 static int rL1, rL2;
