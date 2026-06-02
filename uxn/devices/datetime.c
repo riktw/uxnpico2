@@ -7,14 +7,13 @@ extern uint32_t instructionCount;
 static time_t seconds = 0;
 static struct tm *datetime_t;
 
+volatile uint32_t ipsTable[100] = {0};
+
 void SecondPasssed()
 {
 	seconds++;
-	unsigned int ips = (instructionCount / seconds);
-	volatile uint32_t secs = seconds;
-	// printf("Sec: %li ", secs);
-	// printf("Instr: %i ", instructionCount);
-	// printf("IPS: %li \n", ips);
+	ipsTable[seconds % 100] = instructionCount;
+	instructionCount = 0;
 }
 
 void datetime_update()

@@ -6,6 +6,8 @@
 #include "../uxn11.h"
 #include "../core1.h"
 
+#include "pico/stdlib.h"
+
 static int screen_vector;
 static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
 extern Uint8 ram[BANKS_CAP];
@@ -89,7 +91,7 @@ int screen_get_vector(void)
 	return screen_vector;
 }
 
-void screen_deo_pixel(void)
+void __not_in_flash_func(screen_deo_pixel)(void)
 {
 	const int ctrl = dev[0x2e];
 	const int hi = ctrl & 0x40;
@@ -124,7 +126,7 @@ void screen_deo_pixel(void)
 	}
 }
 
-void screen_deo_sprite(void)
+void __not_in_flash_func(screen_deo_sprite)(void)
 {
 	int i, j, x = rX, y = rY;
 	const int ctrl = dev[0x2f];

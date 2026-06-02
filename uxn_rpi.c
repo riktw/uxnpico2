@@ -12,6 +12,7 @@
 
 volatile bool screenUpdated = false;
 
+// This probably happens on core1 context, look at switching to core0
 void screen_vsync()
 {
     screenUpdated = true;
@@ -20,12 +21,15 @@ void screen_vsync()
 static void run()
 {
     static int counter = 0;
+    static bool led = 1;
 
     while (1)
     {
         if (screenUpdated)
         {
             screenUpdated = false;
+            gpio_put(10, led);
+            led = !led;
             screen_update();
             counter++;
             if (counter >= 60)
@@ -38,9 +42,6 @@ static void run()
 }
 
 /*
-    TODO:
-    - optimize some
-
     When pc board arrives:
     - rtc
     - Second storage
@@ -53,6 +54,10 @@ int main()
     // Set system clock to 252 MHz for HSTX timing
     vreg_set_voltage(VREG_VOLTAGE_1_20);
     set_sys_clock_khz(252000, true);
+
+    gpio_init(10);
+    gpio_set_dir(10, GPIO_OUT);
+    gpio_put(10, 1);
 
     uxn_init();
 
