@@ -4,18 +4,42 @@
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
+#include "pico/multicore.h"
 
 #include "core1.h"
 #include "devices/screen.h"
 
 #include "uxn/uxn11.h"
 
-volatile bool screenUpdated = false;
+// volatile bool screenUpdated = false;
+static int screenUpdated;
+static int counter = 0;
+static bool led = 1;
+static bool busy = false;
 
 // This probably happens on core1 context, look at switching to core0
 void screen_vsync()
 {
-    screenUpdated = true;
+    multicore_doorbell_set_other_core(screenUpdated);
+}
+
+void core0_doorbell_irq()
+{
+    gpio_put(10, led);
+    led = !led;
+
+    if (multicore_doorbell_is_set_current_core(screenUpdated))
+    {
+        multicore_doorbell_clear_current_core(screenUpdated);
+    }
+
+    screen_update();
+    counter++;
+    if (counter >= 60)
+    {
+        SecondPasssed();
+        counter = 0;
+    }
 }
 
 static void run()
@@ -25,19 +49,7 @@ static void run()
 
     while (1)
     {
-        if (screenUpdated)
-        {
-            screenUpdated = false;
-            gpio_put(10, led);
-            led = !led;
-            screen_update();
-            counter++;
-            if (counter >= 60)
-            {
-                SecondPasssed();
-                counter = 0;
-            }
-        }
+        sleep_ms(100);
     }
 }
 
@@ -55,9 +67,10 @@ int main()
     vreg_set_voltage(VREG_VOLTAGE_1_20);
     set_sys_clock_khz(252000, true);
 
-    gpio_init(10);
-    gpio_set_dir(10, GPIO_OUT);
-    gpio_put(10, 1);
+    uint32_t irq = multicore_doorbell_irq_num(screenUpdated);
+    irq_set_exclusive_handler(irq, core0_doorbell_irq);
+    irq_set_priority(irq, 0xF0);
+    irq_set_enabled(irq, true);
 
     uxn_init();
 
