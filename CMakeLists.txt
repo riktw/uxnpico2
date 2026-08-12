@@ -23,7 +23,8 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico2 CACHE STRING "Board type")
+set(PICO_BOARD_HEADER_DIRS ${CMAKE_SOURCE_DIR})
+set(PICO_BOARD rp2350_bellsnwhistles CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -35,7 +36,8 @@ pico_sdk_init()
 add_subdirectory(${CMAKE_SOURCE_DIR}/Libraries/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/src build)
 add_subdirectory(${CMAKE_SOURCE_DIR}/Libraries/pico_hdmi)
 
-add_executable(uxn_rpi uxn_rpi.c core1.c uxn/uxn11.c uxn/devices/file.c uxn/devices/datetime.c uxn/devices/screen.c uxn/devices/system.c uxn/devices/mouse.c uxn/devices/controller.c uxn/devices/console.c ps2/ps2_shared.c hw_config.c)
+add_executable(uxn_rpi uxn_rpi.c core1.c uxn/uxn11.c uxn/devices/file.c uxn/devices/datetime.c uxn/devices/screen.c uxn/devices/system.c uxn/devices/mouse.c uxn/devices/controller.c uxn/devices/console.c ps2/ps2_shared.c hw_config.c
+Libraries/pico-ds1302/ds1302.c)
 
 pico_set_program_name(uxn_rpi "uxn_rpi")
 pico_set_program_version(uxn_rpi "0.1")
@@ -48,13 +50,15 @@ pico_enable_stdio_rtt(uxn_rpi 0)
 pico_generate_pio_header(uxn_rpi ${CMAKE_CURRENT_LIST_DIR}/ps2/ps2_input.pio)
 
 target_link_libraries(uxn_rpi
-        pico_stdlib hardware_dma pico_multicore pico_sync no-OS-FatFS-SD-SDIO-SPI-RPi-Pico pico_hdmi)
+        pico_stdlib hardware_dma pico_multicore pico_sync hardware_i2c
+        no-OS-FatFS-SD-SDIO-SPI-RPi-Pico pico_hdmi)
 
 target_include_directories(uxn_rpi PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/uxn
         ${CMAKE_CURRENT_LIST_DIR}/uxn/uxn/src
         ${CMAKE_CURRENT_LIST_DIR}/ps2
+        ${CMAKE_CURRENT_LIST_DIR}/Libraries/pico-ds1302
 )
 
 pico_set_linker_script(uxn_rpi ${CMAKE_SOURCE_DIR}/linkerfile.ld)

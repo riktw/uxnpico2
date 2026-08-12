@@ -138,7 +138,16 @@ static const deo_handler deo_handlers[256] = {
 	[0xa9] = filea_deo_name,
 	[0xab] = filea_deo_length,
 	[0xad] = filea_deo_read,
-	[0xaf] = filea_deo_write};
+	[0xaf] = filea_deo_write,
+	[0xc0] = datetime_deo_year,
+	[0xc2] = datetime_deo_mon,
+	[0xc3] = datetime_deo_day,
+	[0xc4] = datetime_deo_hou,
+	[0xc5] = datetime_deo_min,
+	[0xc6] = datetime_deo_sec,
+	[0xc7] = datetime_deo_wday,
+	[0xc8] = datetime_deo_yearday,
+	[0xca] = datetime_deo_dst};
 //[0xb5] = fileb_deo_stat,
 //[0xb6] = fileb_deo_delete,
 //[0xb9] = fileb_deo_name,
@@ -238,9 +247,10 @@ unsigned int __not_in_flash_func(uxn_eval)(Uint16 pc)
 
 int uxn_init()
 {
-	initPS2Mouse(6);
-	initPS2Keyboard(8);
+	//initPS2Mouse(6);
+	//initPS2Keyboard(8);
 	InitConsole(uart0, 0, 1, 115200);
+	ds1302init(2, 41, 40);
 }
 
 int uxn_load_rom(char *filename)
