@@ -8,14 +8,11 @@
 
 #include "core1.h"
 #include "devices/screen.h"
+#include "devices/datetime.h"
 
 #include "uxn/uxn11.h"
 
-// volatile bool screenUpdated = false;
 static int screenUpdated;
-static int counter = 0;
-static bool led = 1;
-static bool busy = false;
 
 // This probably happens on core1 context, look at switching to core0
 void screen_vsync()
@@ -25,21 +22,12 @@ void screen_vsync()
 
 void core0_doorbell_irq()
 {
-    gpio_put(10, led);
-    led = !led;
-
     if (multicore_doorbell_is_set_current_core(screenUpdated))
     {
         multicore_doorbell_clear_current_core(screenUpdated);
     }
 
     screen_update();
-    counter++;
-    if (counter >= 60)
-    {
-        SecondPasssed();
-        counter = 0;
-    }
 }
 
 static void run()
@@ -49,13 +37,13 @@ static void run()
 
     while (1)
     {
-        sleep_ms(100);
+        sleep_ms(500);
+        datetime_update();
     }
 }
 
 /*
     When pc board arrives:
-    - rtc
     - Second storage
     - Sound
     - USB for keeb/mouse
@@ -74,7 +62,7 @@ int main()
 
     uxn_init();
 
-    uxn_load_rom("boot.rom");
+    uxn_load_rom("catclock.rom");
 
     core1_init(screen_vsync);
 

@@ -109,8 +109,8 @@ static video_output_task_fn background_task = NULL;
 static video_output_scanline_cb_t scanline_callback = NULL;
 static video_output_vsync_cb_t vsync_callback = NULL;
 
-#define DMACH_PING 2
-#define DMACH_PONG 3
+#define DMACH_PING 4
+#define DMACH_PONG 5
 
 // ============================================================================
 // Command Lists

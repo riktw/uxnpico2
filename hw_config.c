@@ -24,31 +24,46 @@ https://github.com/carlk3/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico/tree/main#customizing
 
 /* Configuration of hardware SPI object */
 static spi_t spi = {
-    .hw_inst = spi0,  // SPI component
-    .sck_gpio = 22,    // GPIO number (not Pico pin number)
+    .hw_inst = spi0, // SPI component
+    .sck_gpio = 22,  // GPIO number (not Pico pin number)
     .mosi_gpio = 23,
     .miso_gpio = 20,
+    .baud_rate = 25000000,
     //.baud_rate = 125 * 1000 * 1000 / 8  // 15625000 Hz
     //.baud_rate = 125 * 1000 * 1000 / 6  // 20833333 Hz
-    .baud_rate = 125 * 1000 * 1000 / 4  // 31250000 Hz
+    //.baud_rate = 125 * 1000 * 1000 / 4 // 31250000 Hz
     //.baud_rate = 125 * 1000 * 1000 / 2  // 62500000 Hz
 };
 
 /* SPI Interface */
 static sd_spi_if_t spi_if = {
     .spi = &spi,  // Pointer to the SPI driving this card
-    .ss_gpio = 21  // The SPI slave select GPIO for this SD card
+    .ss_gpio = 21 // The SPI slave select GPIO for this SD card
+};
+
+static sd_sdio_if_t sdio_if = {
+    .CMD_gpio = 35,
+    .D0_gpio = 36,
+    .SDIO_PIO = pio1,
+    .baud_rate = 25000000,
+    .DMA_IRQ_num = DMA_IRQ_1,
+};
+
+static sd_card_t sdio_card = {
+    .type = SD_IF_SDIO,
+    .sdio_if_p = &sdio_if,
+    .use_card_detect = false,
 };
 
 /* Configuration of the SD Card socket object */
 static sd_card_t sd_card = {
     .type = SD_IF_SPI,
-    .spi_if_p = &spi_if  // Pointer to the SPI interface driving this card
+    .spi_if_p = &spi_if // Pointer to the SPI interface driving this card
 };
 
 /* ********************************************************************** */
 
-size_t sd_get_num() { return 1; }
+size_t sd_get_num() { return 2; }
 
 /**
  * @brief Get a pointer to an SD card object by its number.
@@ -57,12 +72,18 @@ size_t sd_get_num() { return 1; }
  *
  * @return A pointer to the SD card object, or @c NULL if the number is invalid.
  */
-sd_card_t *sd_get_by_num(size_t num) {
-    if (0 == num) {
-        // The number 0 is a valid SD card number.
-        // Return a pointer to the sd_card object.
+sd_card_t *sd_get_by_num(size_t num)
+{
+    if (num == 0)
+    {
         return &sd_card;
-    } else {
+    }
+    if (num == 1)
+    {
+        return &sdio_card;
+    }
+    else
+    {
         // The number is invalid. Return @c NULL.
         return NULL;
     }

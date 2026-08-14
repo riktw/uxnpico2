@@ -139,6 +139,13 @@ static const deo_handler deo_handlers[256] = {
 	[0xab] = filea_deo_length,
 	[0xad] = filea_deo_read,
 	[0xaf] = filea_deo_write,
+	[0xb5] = fileb_deo_stat,
+	[0xb5] = fileb_deo_stat,
+	[0xb6] = fileb_deo_delete,
+	[0xb9] = fileb_deo_name,
+	[0xbb] = fileb_deo_length,
+	[0xbd] = fileb_deo_read,
+	[0xbf] = fileb_deo_write,
 	[0xc0] = datetime_deo_year,
 	[0xc2] = datetime_deo_mon,
 	[0xc3] = datetime_deo_day,
@@ -148,12 +155,6 @@ static const deo_handler deo_handlers[256] = {
 	[0xc7] = datetime_deo_wday,
 	[0xc8] = datetime_deo_yearday,
 	[0xca] = datetime_deo_dst};
-//[0xb5] = fileb_deo_stat,
-//[0xb6] = fileb_deo_delete,
-//[0xb9] = fileb_deo_name,
-//[0xbb] = fileb_deo_length,
-//[0xbd] = fileb_deo_read,
-//[0xbf] = fileb_deo_write};
 
 static inline Uint8 emu_dei(const Uint8 port)
 {
@@ -245,12 +246,16 @@ unsigned int __not_in_flash_func(uxn_eval)(Uint16 pc)
 	return 0;
 }
 
+static FATFS fs;
 int uxn_init()
 {
 	//initPS2Mouse(6);
 	//initPS2Keyboard(8);
 	InitConsole(uart0, 0, 1, 115200);
 	ds1302init(2, 41, 40);
+	sd_init_driver();
+	const char* drive_b = sd_get_drive_prefix(sd_get_by_num(1));
+	FRESULT fr = f_mount(&fs, drive_b, 1);
 }
 
 int uxn_load_rom(char *filename)
