@@ -18,8 +18,8 @@ WITH REGARD TO THIS SOFTWARE.
 #include "f_util.h"
 #include "ff.h"
 
-#define DRIVE_A 0
-#define DRIVE_B 1
+#define DRIVE_A '0'
+#define DRIVE_B '1'
 
 typedef struct
 {
@@ -35,11 +35,11 @@ typedef struct
 	} state;
 } UxnFile;
 
-Uint16 file_init(UxnFile *c, bool drive, char *filename);
-Uint16 file_read(UxnFile *c, bool drive, void *dest, Uint16 len);
-Uint16 file_write(UxnFile *c, bool drive, void *src, Uint16 len, Uint8 flags);
-Uint16 file_stat(UxnFile *c, bool drive, void *dest, Uint16 len);
-Uint16 file_delete(UxnFile *c, bool drive);
+Uint16 file_init(UxnFile *c, char drive, char *filename);
+Uint16 file_read(UxnFile *c, void *dest, Uint16 len);
+Uint16 file_write(UxnFile *c, void *src, Uint16 len, Uint8 flags);
+Uint16 file_stat(UxnFile *c, void *dest, Uint16 len);
+Uint16 file_delete(UxnFile *c);
 
 void filea_deo_stat(void);
 void filea_deo_delete(void);
@@ -55,6 +55,7 @@ void fileb_deo_length(void);
 void fileb_deo_read(void);
 void fileb_deo_write(void);
 
+bool init_fs(void);
 int load_rom(Uint8 *ram, char *filename);
 void unmount();
 

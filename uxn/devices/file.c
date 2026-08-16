@@ -51,7 +51,7 @@ static Uint16 get_stat(char *p, Uint16 len, const char *pathname)
 	return len;
 }
 
-static Uint16 file_read_dir(UxnFile *c, bool drive, char *dest, Uint16 len)
+static Uint16 file_read_dir(UxnFile *c, char *dest, Uint16 len)
 {
 	static char pathname[4356];
 	FILINFO st;
@@ -76,11 +76,15 @@ static Uint16 file_read_dir(UxnFile *c, bool drive, char *dest, Uint16 len)
 	return p - dest;
 }
 
-Uint16 file_init(UxnFile *c, bool drive, char *filename)
+Uint16 file_init(UxnFile *c, char drive, char *filename)
 {
 	char *p = c->current_filename;
 	size_t len = sizeof(c->current_filename);
 	reset(c);
+	*p++ = drive;
+	len--;
+	*p++ = ':';
+	len--;
 	while (len)
 	{
 		if ((*p++ = *filename++) == '\0')
@@ -91,7 +95,7 @@ Uint16 file_init(UxnFile *c, bool drive, char *filename)
 	return 0;
 }
 
-Uint16 file_read(UxnFile *c, bool drive, void *dest, Uint16 len)
+Uint16 file_read(UxnFile *c, void *dest, Uint16 len)
 {
 	UINT bytesRead = 0;
 	if (c->state != FILE_READ && c->state != DIR_READ)
@@ -108,11 +112,11 @@ Uint16 file_read(UxnFile *c, bool drive, void *dest, Uint16 len)
 		return bytesRead;
 	}
 	if (c->state == DIR_READ)
-		return file_read_dir(c, drive, dest, len);
+		return file_read_dir(c, dest, len);
 	return 0;
 }
 
-Uint16 file_write(UxnFile *c, bool drive, void *src, Uint16 len, Uint8 flags)
+Uint16 file_write(UxnFile *c, void *src, Uint16 len, Uint8 flags)
 {
 	Uint16 ret = 0;
 	UINT bytesWritten = 0;
@@ -131,7 +135,7 @@ Uint16 file_write(UxnFile *c, bool drive, void *src, Uint16 len, Uint8 flags)
 	return ret;
 }
 
-Uint16 file_stat(UxnFile *c, bool drive, void *dest, Uint16 len)
+Uint16 file_stat(UxnFile *c, void *dest, Uint16 len)
 {
 	char *basename = strrchr(c->current_filename, '/');
 	if (basename != NULL)
@@ -141,7 +145,7 @@ Uint16 file_stat(UxnFile *c, bool drive, void *dest, Uint16 len)
 	return get_stat(dest, len, c->current_filename);
 }
 
-Uint16 file_delete(UxnFile *c, bool drive)
+Uint16 file_delete(UxnFile *c)
 {
 	if (f_unlink(c->current_filename) == FR_OK)
 	{
@@ -152,19 +156,27 @@ Uint16 file_delete(UxnFile *c, bool drive)
 
 /* Boot */
 
+bool init_fs(void)
+{
+	sd_init_driver();
+	const char *drive = sd_get_drive_prefix(sd_get_by_num(0));
+	FRESULT fr = f_mount(&fs[0], drive, 1);
+
+	if (FR_OK == fr)
+	{
+		const char *drive_b = sd_get_drive_prefix(sd_get_by_num(1));
+		fr = f_mount(&fs[1], drive_b, 1);
+		return 1;
+	}
+	return 0;
+}
+
 int load_rom(Uint8 *ram, char *filename)
 {
 	int ret = 0;
 	UINT bytesRead = 0;
 
-	const char *drive = sd_get_drive_prefix(sd_get_by_num(0));
-	FRESULT fr = f_mount(&fs[0], drive, 1);
-	if (FR_OK != fr)
-	{
-		ret = 1;
-		return ret;
-	}
-	fr = f_open(&fp[0], filename, FA_READ);
+	FRESULT fr = f_open(&fp[0], filename, FA_READ);
 	if (FR_OK != fr)
 	{
 		ret = 1;
@@ -191,12 +203,12 @@ void filea_deo_stat(void)
 {
 	int location = peek2(&dev[0xa4]);
 	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
-	poke2(&dev[0xa2], file_stat(&ufs[0], DRIVE_A, &ram[location], length));
+	poke2(&dev[0xa2], file_stat(&ufs[0], &ram[location], length));
 }
 
 void filea_deo_delete(void)
 {
-	poke2(&dev[0xa2], file_delete(&ufs[0], DRIVE_A));
+	poke2(&dev[0xa2], file_delete(&ufs[0]));
 }
 
 void filea_deo_name(void)
@@ -213,26 +225,26 @@ void filea_deo_read(void)
 {
 	int location = peek2(&dev[0xac]);
 	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
-	poke2(&dev[0xa2], file_read(&ufs[0], DRIVE_A, &ram[location], length));
+	poke2(&dev[0xa2], file_read(&ufs[0], &ram[location], length));
 }
 
 void filea_deo_write(void)
 {
 	int location = peek2(&dev[0xae]);
 	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
-	poke2(&dev[0xa2], file_write(&ufs[0], DRIVE_A, &ram[location], length, dev[0xa7]));
+	poke2(&dev[0xa2], file_write(&ufs[0], &ram[location], length, dev[0xa7]));
 }
 
 void fileb_deo_stat(void)
 {
 	int location = peek2(&dev[0xa4]);
 	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
-	poke2(&dev[0xa2], file_stat(&ufs[1], DRIVE_B, &ram[location], length));
+	poke2(&dev[0xa2], file_stat(&ufs[1], &ram[location], length));
 }
 
 void fileb_deo_delete(void)
 {
-	poke2(&dev[0xa2], file_delete(&ufs[1], DRIVE_B));
+	poke2(&dev[0xa2], file_delete(&ufs[1]));
 }
 
 void fileb_deo_name(void)
@@ -249,12 +261,12 @@ void fileb_deo_read(void)
 {
 	int location = peek2(&dev[0xac]);
 	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
-	poke2(&dev[0xa2], file_read(&ufs[1], DRIVE_B, &ram[location], length));
+	poke2(&dev[0xa2], file_read(&ufs[1], &ram[location], length));
 }
 
 void fileb_deo_write(void)
 {
 	int location = peek2(&dev[0xae]);
 	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
-	poke2(&dev[0xa2], file_write(&ufs[0], DRIVE_B, &ram[location], length, dev[0xa7]));
+	poke2(&dev[0xa2], file_write(&ufs[0], &ram[location], length, dev[0xa7]));
 }

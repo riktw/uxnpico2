@@ -253,9 +253,7 @@ int uxn_init()
 	//initPS2Keyboard(8);
 	InitConsole(uart0, 0, 1, 115200);
 	ds1302init(2, 41, 40);
-	sd_init_driver();
-	const char* drive_b = sd_get_drive_prefix(sd_get_by_num(1));
-	FRESULT fr = f_mount(&fs, drive_b, 1);
+	init_fs();
 }
 
 int uxn_load_rom(char *filename)

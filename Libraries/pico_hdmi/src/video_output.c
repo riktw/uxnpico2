@@ -109,7 +109,7 @@ static video_output_task_fn background_task = NULL;
 static video_output_scanline_cb_t scanline_callback = NULL;
 static video_output_vsync_cb_t vsync_callback = NULL;
 
-#define DMACH_PING 4
+#define DMACH_PING 4 // sdio claims first available, which is 2 and 3. Use 4 and 5 here.
 #define DMACH_PONG 5
 
 // ============================================================================
