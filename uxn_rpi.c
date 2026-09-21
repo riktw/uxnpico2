@@ -9,10 +9,15 @@
 #include "core1.h"
 #include "devices/screen.h"
 #include "devices/datetime.h"
+#include "devices/audio.h"
+#include "devices/mouse.h"
+#include "devices/controller.h"
 
 #include "uxn/uxn11.h"
 
-#include "pico/audio_i2s.h"
+#include "pio_usb.h"
+#include "tusb.h"
+
 #include <math.h>
 
 static int screenUpdated;
@@ -29,85 +34,18 @@ void core0_doorbell_irq()
     {
         multicore_doorbell_clear_current_core(screenUpdated);
     }
-
+    checkNesController();
     screen_update();
 }
 
-#define SINE_WAVE_TABLE_LEN 4096
-#define SAMPLES_PER_BUFFER 256
-
-static int16_t sine_wave_table_right[SINE_WAVE_TABLE_LEN];
-static int16_t sine_wave_table_left[SINE_WAVE_TABLE_LEN];
-struct audio_buffer_pool *ap = 0;
-
 static void run()
 {
-    uint32_t step = 0x200000;
-    uint32_t pos = 0;
-    uint32_t pos_max = 0x10000 * SINE_WAVE_TABLE_LEN;
-    uint vol = 16;
-
     while (1)
     {
-        struct audio_buffer *buffer = take_audio_buffer(ap, true);
-        int16_t *samples = (int16_t *)buffer->buffer->bytes;
-        for (uint i = 0; i < buffer->max_sample_count; i++)
-        {
-            samples[i * 2] = (vol * sine_wave_table_left[pos >> 16u]) >> 8u;
-            samples[(i * 2) + 1] = (vol * sine_wave_table_right[pos >> 16u]) >> 8u;
-            pos += step;
-            if (pos >= pos_max)
-                pos -= pos_max;
-        }
-        buffer->sample_count = buffer->max_sample_count;
-        give_audio_buffer(ap, buffer);
+        audio_callback();
         datetime_update();
+        tuh_task();
     }
-}
-
-/*
-    When pc board arrives:
-    - Sound
-    - USB for keeb/mouse
-    - Game port
-*/
-
-struct audio_buffer_pool *init_audio()
-{
-
-    static audio_format_t audio_format = {
-        .format = AUDIO_BUFFER_FORMAT_PCM_S16,
-        .sample_freq = 48000,
-        .channel_count = 2,
-    };
-
-    static struct audio_buffer_format producer_format = {
-        .format = &audio_format,
-        .sample_stride = 4};
-
-    struct audio_buffer_pool *producer_pool = audio_new_producer_pool(&producer_format, 3,
-                                                                      SAMPLES_PER_BUFFER); // todo correct size
-    bool __unused ok;
-    const struct audio_format *output_format;
-
-    struct audio_i2s_config config = {
-        .data_pin = 30,
-        .clock_pin_base = 32,
-        .dma_channel = 8,
-        .pio_sm = 2,
-    };
-
-    output_format = audio_i2s_setup(&audio_format, &config);
-    if (!output_format)
-    {
-        panic("PicoAudio: Unable to open audio device.\n");
-    }
-
-    ok = audio_i2s_connect(producer_pool);
-    assert(ok);
-    audio_i2s_set_enabled(true);
-
-    return producer_pool;
 }
 
 int main()
@@ -115,22 +53,32 @@ int main()
     // Set system clock to 252 MHz for HSTX timing
     vreg_set_voltage(VREG_VOLTAGE_1_20);
     set_sys_clock_khz(252000, true);
+    stdio_init_all();
 
-    for (int i = 0; i < SINE_WAVE_TABLE_LEN; i++)
-    {
-        sine_wave_table_right[i] = 32767 * cosf(i * 2 * (float)(M_PI / SINE_WAVE_TABLE_LEN));
-        sine_wave_table_left[i] = 32767 * cosf(i * 2 * (float)(M_PI / SINE_WAVE_TABLE_LEN) * 2);
-    }
-    ap = init_audio();
+    printf("Hello world~\n");
+
+    gpio_init(42);
+    gpio_put(41, 1);
+    sleep_ms(100);
 
     uint32_t irq = multicore_doorbell_irq_num(screenUpdated);
     irq_set_exclusive_handler(irq, core0_doorbell_irq);
     irq_set_priority(irq, 0xF0);
     irq_set_enabled(irq, true);
 
+    pio_usb_configuration_t pio_cfg = {
+        28, 2, PIO_SM_USB_TX_DEFAULT,
+        6, 2, PIO_SM_USB_RX_DEFAULT,
+        PIO_SM_USB_EOP_DEFAULT, NULL, PIO_USB_DEBUG_PIN_NONE,
+        PIO_USB_DEBUG_PIN_NONE, false, PIO_USB_PINOUT_DPDM};
+
+    tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
+
+    tuh_init(1);
+
     uxn_init();
 
-    uxn_load_rom("potato.rom");
+    uxn_load_rom("perifs.rom");
 
     core1_init(screen_vsync);
 
@@ -144,5 +92,67 @@ int main()
     while (true)
     {
         sleep_ms(1000);
+    }
+}
+
+//--------------------------------------------------------------------+
+// Host HID
+//--------------------------------------------------------------------+
+void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *desc_report, uint16_t desc_len)
+{
+    (void)desc_report;
+    (void)desc_len;
+
+    // Interface protocol (hid_interface_protocol_enum_t)
+    const char *protocol_str[] = {"None", "Keyboard", "Mouse"};
+    uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
+
+    uint16_t vid, pid;
+    tuh_vid_pid_get(dev_addr, &vid, &pid);
+
+    char tempbuf[256];
+    printf(tempbuf, "[%04x:%04x][%u] HID Interface%u, Protocol = %s\r\n", vid, pid, dev_addr, instance, protocol_str[itf_protocol]);
+
+    // Receive report from boot keyboard & mouse only
+    // tuh_hid_report_received_cb() will be invoked when report is available
+    if (itf_protocol == HID_ITF_PROTOCOL_KEYBOARD || itf_protocol == HID_ITF_PROTOCOL_MOUSE)
+    {
+        if (!tuh_hid_receive_report(dev_addr, instance))
+        {
+            printf("Error: cannot request report\r\n");
+        }
+    }
+}
+
+// Invoked when device with hid interface is un-mounted
+void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance)
+{
+    printf("[%u] HID Interface%u is unmounted\r\n", dev_addr, instance);
+}
+
+// Invoked when received report from device via interrupt endpoint
+void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const *report, uint16_t len)
+{
+    (void)len;
+    uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
+
+    switch (itf_protocol)
+    {
+    case HID_ITF_PROTOCOL_KEYBOARD:
+        process_kbd_report(dev_addr, (hid_keyboard_report_t const *)report);
+        break;
+
+    case HID_ITF_PROTOCOL_MOUSE:
+        process_mouse_report(dev_addr, (hid_mouse_report_t const *)report);
+        break;
+
+    default:
+        break;
+    }
+
+    // continue to request to receive report
+    if (!tuh_hid_receive_report(dev_addr, instance))
+    {
+        printf("Error: cannot request report\r\n");
     }
 }

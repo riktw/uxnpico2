@@ -14,8 +14,14 @@ WITH REGARD TO THIS SOFTWARE.
 #define UXN_DEVICES_CONTROLLER_H
 
 #include <stdint.h>
+#include <stdbool.h>
+#include "pio_usb.h"
+#include "tusb.h"
 
 void initPS2Keyboard(uint32_t dataPin);
+void initNesController(uint32_t latchPin, uint32_t clockPin, uint32_t dataPin);
+void checkNesController();
+void process_kbd_report(uint8_t dev_addr, hid_keyboard_report_t const *report);
 
 void controller_deo_vector(void);
 void controller_down(Uint8 mask);
