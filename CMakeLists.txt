@@ -26,6 +26,8 @@ endif()
 set(PICO_BOARD_HEADER_DIRS ${CMAKE_SOURCE_DIR})
 set(PICO_BOARD rp2350_bellsnwhistles CACHE STRING "Board type")
 
+set(PCBOARD 1 CACHE STRING "PCBoard used")
+
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
@@ -64,9 +66,7 @@ target_link_libraries(uxn_rpi
 
 target_compile_definitions(uxn_rpi PRIVATE 
         PICO_AUDIO_I2S_MONO_INPUT=0
-        PICO_AUDIO_I2S_DMA_IRQ=1
-        PIO_USB_USE_TINYUSB
-        PIO_USB_DP_PIN_DEFAULT=25)
+        PICO_AUDIO_I2S_DMA_IRQ=1 )
 
 target_include_directories(uxn_rpi PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
@@ -75,6 +75,11 @@ target_include_directories(uxn_rpi PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/ps2
         ${CMAKE_CURRENT_LIST_DIR}/Libraries/pico-ds1302
 )
+
+
+if (PCBOARD)
+   add_compile_definitions(ENABLE_PCBOARD=1 PIO_USB_USE_TINYUSB PIO_USB_DP_PIN_DEFAULT=25)
+endif()
 
 pico_set_linker_script(uxn_rpi ${CMAKE_SOURCE_DIR}/linkerfile.ld)
 

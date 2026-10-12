@@ -270,13 +270,17 @@ unsigned int __not_in_flash_func(uxn_eval)(Uint16 pc)
 
 int uxn_init()
 {
-	//initPS2Mouse(6);
-	//initPS2Keyboard(8);
-	//InitConsole(uart0, 0, 1, 115200);
+	InitConsole(uart0, 0, 1, 115200);
+#ifdef ENABLE_PCBOARD
 	initNesController(4, 3, 5);
 	ds1302init(2, 41, 40);
 	audio_init();
 	init_fs();
+#else
+	initPS2Mouse(6);
+	initPS2Keyboard(8);
+#endif
+
 	return 1;
 }
 

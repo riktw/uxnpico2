@@ -19,7 +19,7 @@ typedef unsigned int Uint32;
 
 #define SAMPLE_FREQUENCY 44100
 #define SAMPLES_PER_BUFFER 512
-#define POLYPHONY 1
+#define POLYPHONY 4
 
 void audio_init();
 Uint8 audio_get_vu(int instance);

@@ -162,12 +162,14 @@ bool init_fs(void)
 	const char *drive = sd_get_drive_prefix(sd_get_by_num(0));
 	FRESULT fr = f_mount(&fs[0], drive, 1);
 
+#ifdef ENABLE_PCBOARD
 	if (FR_OK == fr)
 	{
 		const char *drive_b = sd_get_drive_prefix(sd_get_by_num(1));
 		fr = f_mount(&fs[1], drive_b, 1);
 		return 1;
 	}
+#endif
 	return 0;
 }
 

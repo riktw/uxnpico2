@@ -42,9 +42,11 @@ static void run()
 {
     while (1)
     {
+#ifdef ENABLE_PCBOARD
         audio_callback();
         datetime_update();
         tuh_task();
+#endif
     }
 }
 
@@ -66,6 +68,7 @@ int main()
     irq_set_priority(irq, 0xF0);
     irq_set_enabled(irq, true);
 
+#ifdef ENABLE_PCBOARD
     pio_usb_configuration_t pio_cfg = {
         28, 2, PIO_SM_USB_TX_DEFAULT,
         6, 2, PIO_SM_USB_RX_DEFAULT,
@@ -75,10 +78,11 @@ int main()
     tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
 
     tuh_init(1);
+#endif
 
     uxn_init();
 
-    uxn_load_rom("perifs.rom");
+    uxn_load_rom("potato.rom");
 
     core1_init(screen_vsync);
 
