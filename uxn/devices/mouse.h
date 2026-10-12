@@ -14,6 +14,7 @@ WITH REGARD TO THIS SOFTWARE.
 #define UXN_DEVICES_MOUSE_H
 
 #include <stdint.h>
+#include "tusb.h"
 
 void initPS2Mouse(uint32_t dataPin);
 
@@ -22,5 +23,6 @@ void mouse_down(Uint8 mask);
 void mouse_up(Uint8 mask);
 void mouse_pos(Uint16 x, Uint16 y);
 void mouse_scroll(Uint16 x, Uint16 y);
+void process_mouse_report(uint8_t dev_addr, hid_mouse_report_t const *report);
 
 #endif

@@ -14,8 +14,9 @@ WITH REGARD TO THIS SOFTWARE.
 #define UXN_DEVICES_DATETIME_H
 
 #include "../uxntypes.h"
+#include "ds1302.h"
 
-void SecondPasssed();
+void datetime_update();
 Uint8 datetime_dei_yhb(void);
 Uint8 datetime_dei_ylb(void);
 Uint8 datetime_dei_mon(void);
@@ -27,5 +28,15 @@ Uint8 datetime_dei_wday(void);
 Uint8 datetime_dei_ydayhb(void);
 Uint8 datetime_dei_ydaylb(void);
 Uint8 datetime_dei_dst(void);
+
+void datetime_deo_year(void);
+void datetime_deo_mon(void);
+void datetime_deo_day(void);
+void datetime_deo_hou(void);
+void datetime_deo_min(void);
+void datetime_deo_sec(void);
+void datetime_deo_wday(void);
+void datetime_deo_yearday(void);
+void datetime_deo_dst(void);
 
 #endif

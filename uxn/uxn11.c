@@ -21,8 +21,7 @@ cc -DNDEBUG -O2 -g0 -s src/uxn11.c -lX11 -lutil -o bin/uxn11
 */
 
 Uint8 ram[BANKS_CAP], dev[0x100], stk[2][0x100], ptr[2];
-static int console_vector, screen_vector, controller_vector;
-static int rX, rY, rA, rMX, rMY, rMA, rML, rDX, rDY, rL1, rL2;
+static int screen_vector;
 
 uint32_t instructionCount = 0;
 
@@ -33,6 +32,10 @@ uint32_t instructionCount = 0;
 /*
 @|Console ----------------------------------------------------------- */
 #include "devices/console.h"
+
+/*
+@|Audio ----------------------------------------------------------- */
+#include "devices/audio.h"
 
 /*
 @|Screen ------------------------------------------------------------ */
@@ -90,6 +93,18 @@ static const dei_handler dei_handlers[256] = {
 	[0x2b] = screen_dei_rylb,
 	[0x2c] = screen_dei_rahb,
 	[0x2d] = screen_dei_ralb,
+	[0x32] = audio0_dei_positionl,
+	[0x33] = audio0_dei_positionh,
+	[0x34] = audio0_dei_output,
+	[0x42] = audio1_dei_positionl,
+	[0x43] = audio1_dei_positionh,
+	[0x44] = audio1_dei_output,
+	[0x52] = audio2_dei_positionl,
+	[0x53] = audio2_dei_positionh,
+	[0x54] = audio2_dei_output,
+	[0x62] = audio3_dei_positionl,
+	[0x63] = audio3_dei_positionh,
+	[0x64] = audio3_dei_output,
 	[0xc0] = datetime_dei_yhb,
 	[0xc1] = datetime_dei_ylb,
 	[0xc2] = datetime_dei_mon,
@@ -131,6 +146,14 @@ static const deo_handler deo_handlers[256] = {
 	[0x2d] = screen_deo_addr,
 	[0x2e] = screen_deo_pixel,
 	[0x2f] = screen_deo_sprite,
+	[0x30] = audio0_deo_vector,
+	[0x3f] = audio0_deo_pitch,
+	[0x40] = audio1_deo_vector,
+	[0x4f] = audio1_deo_pitch,
+	[0x50] = audio2_deo_vector,
+	[0x5f] = audio2_deo_pitch,
+	[0x60] = audio3_deo_vector,
+	[0x6f] = audio3_deo_pitch,
 	[0x81] = controller_deo_vector,
 	[0x91] = mouse_deo_vector,
 	[0xa5] = filea_deo_stat,
@@ -138,13 +161,22 @@ static const deo_handler deo_handlers[256] = {
 	[0xa9] = filea_deo_name,
 	[0xab] = filea_deo_length,
 	[0xad] = filea_deo_read,
-	[0xaf] = filea_deo_write};
-//[0xb5] = fileb_deo_stat,
-//[0xb6] = fileb_deo_delete,
-//[0xb9] = fileb_deo_name,
-//[0xbb] = fileb_deo_length,
-//[0xbd] = fileb_deo_read,
-//[0xbf] = fileb_deo_write};
+	[0xaf] = filea_deo_write,
+	[0xb5] = fileb_deo_stat,
+	[0xb6] = fileb_deo_delete,
+	[0xb9] = fileb_deo_name,
+	[0xbb] = fileb_deo_length,
+	[0xbd] = fileb_deo_read,
+	[0xbf] = fileb_deo_write,
+	[0xc0] = datetime_deo_year,
+	[0xc2] = datetime_deo_mon,
+	[0xc3] = datetime_deo_day,
+	[0xc4] = datetime_deo_hou,
+	[0xc5] = datetime_deo_min,
+	[0xc6] = datetime_deo_sec,
+	[0xc7] = datetime_deo_wday,
+	[0xc8] = datetime_deo_yearday,
+	[0xca] = datetime_deo_dst};
 
 static inline Uint8 emu_dei(const Uint8 port)
 {
@@ -238,14 +270,24 @@ unsigned int __not_in_flash_func(uxn_eval)(Uint16 pc)
 
 int uxn_init()
 {
+	InitConsole(uart0, 0, 1, 115200);
+#ifdef ENABLE_PCBOARD
+	initNesController(4, 3, 5);
+	ds1302init(2, 41, 40);
+	audio_init();
+	init_fs();
+#else
 	initPS2Mouse(6);
 	initPS2Keyboard(8);
-	InitConsole(uart0, 0, 1, 115200);
+#endif
+
+	return 1;
 }
 
 int uxn_load_rom(char *filename)
 {
 	load_rom(ram, filename);
 	screen_resize(WIDTH, HEIGHT);
+	return 1;
 }
 

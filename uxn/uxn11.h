@@ -50,7 +50,6 @@ typedef struct Uxn
 	Device dev[16];
 } Uxn11;
 
-void SecondPasssed();
 void screen_update(void);
 unsigned int console_input(int c, unsigned int type);
 int uxn_boot(Uxn11 *u, Uint8 *ram);

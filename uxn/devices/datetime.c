@@ -2,78 +2,113 @@
 #include "datetime.h"
 #include <stdio.h>
 
-extern uint32_t instructionCount;
+extern Uint8 dev[0x100];
 
-static time_t seconds = 0;
-static struct tm *datetime_t;
-
-volatile uint32_t ipsTable[100] = {0};
-
-void SecondPasssed()
-{
-	seconds++;
-	ipsTable[seconds % 100] = instructionCount;
-	instructionCount = 0;
-}
+static DateTime dateTime;
+static bool updateNeeded = false;
 
 void datetime_update()
 {
-	struct tm *t = localtime(&seconds);
-	datetime_t = t;
+	if (updateNeeded)
+	{
+		updateNeeded = false;
+		ds1302setDateTime(&dateTime);
+	}
+	ds1302getDateTime(&dateTime);
 }
 
 Uint8 datetime_dei_yhb(void)
 {
-	datetime_update();
-	return (datetime_t->tm_year + 1900) >> 8;
+
+	return (dateTime.year + 1900) >> 8;
 }
 Uint8 datetime_dei_ylb(void)
 {
-	datetime_update();
-	return (datetime_t->tm_year + 1900);
+	return (dateTime.year + 1900);
 }
 Uint8 datetime_dei_mon(void)
 {
-	datetime_update();
-	return datetime_t->tm_mon;
+	return dateTime.month;
 }
 Uint8 datetime_dei_day(void)
 {
-	datetime_update();
-	return datetime_t->tm_mday;
+	return dateTime.day;
 }
 Uint8 datetime_dei_hou(void)
 {
-	datetime_update();
-	return datetime_t->tm_hour;
+	return dateTime.hour;
 }
 Uint8 datetime_dei_min(void)
 {
-	datetime_update();
-	return datetime_t->tm_min;
+	return dateTime.minute;
 }
 Uint8 datetime_dei_sec(void)
 {
-	datetime_update();
-	return datetime_t->tm_sec;
+	return dateTime.second;
 }
 Uint8 datetime_dei_wday(void)
 {
-	datetime_update();
-	return datetime_t->tm_wday;
+	return dateTime.dow;
 }
 Uint8 datetime_dei_ydayhb(void)
 {
-	datetime_update();
-	return datetime_t->tm_yday >> 8;
+	return 0;
 }
 Uint8 datetime_dei_ydaylb(void)
 {
-	datetime_update();
-	return datetime_t->tm_yday;
+	return 0;
 }
 Uint8 datetime_dei_dst(void)
 {
-	datetime_update();
-	return datetime_t->tm_isdst;
+	return 0;
+}
+
+void datetime_deo_year(void)
+{
+	dateTime.year = ((dev[0xc0] << 8) | dev[0xc1]) - 1900;
+	updateNeeded = true;
+}
+
+void datetime_deo_mon(void)
+{
+	dateTime.month = dev[0xc2];
+	updateNeeded = true;
+}
+
+void datetime_deo_day(void)
+{
+	dateTime.day = dev[0xc3];
+	updateNeeded = true;
+}
+
+void datetime_deo_hou(void)
+{
+	dateTime.hour = dev[0xc4];
+	updateNeeded = true;
+}
+
+void datetime_deo_min(void)
+{
+	dateTime.minute = dev[0xc5];
+	updateNeeded = true;
+}
+
+void datetime_deo_sec(void)
+{
+	dateTime.second = dev[0xc6];
+	updateNeeded = true;
+}
+
+void datetime_deo_wday(void)
+{
+	dateTime.dow = dev[0xc7];
+	updateNeeded = true;
+}
+
+void datetime_deo_yearday(void)
+{
+}
+
+void datetime_deo_dst(void)
+{
 }

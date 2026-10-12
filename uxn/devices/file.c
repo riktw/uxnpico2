@@ -5,8 +5,8 @@
 #include "../uxn11.h"
 #include "file.h"
 
-static FATFS fs;
-static FIL fp;
+static FATFS fs[2];
+static FIL fp[2];
 
 extern Uint8 ram[BANKS_CAP];
 extern Uint8 dev[0x100];
@@ -76,11 +76,15 @@ static Uint16 file_read_dir(UxnFile *c, char *dest, Uint16 len)
 	return p - dest;
 }
 
-Uint16 file_init(UxnFile *c, char *filename)
+Uint16 file_init(UxnFile *c, char drive, char *filename)
 {
 	char *p = c->current_filename;
 	size_t len = sizeof(c->current_filename);
 	reset(c);
+	*p++ = drive;
+	len--;
+	*p++ = ':';
+	len--;
 	while (len)
 	{
 		if ((*p++ = *filename++) == '\0')
@@ -152,25 +156,36 @@ Uint16 file_delete(UxnFile *c)
 
 /* Boot */
 
+bool init_fs(void)
+{
+	sd_init_driver();
+	const char *drive = sd_get_drive_prefix(sd_get_by_num(0));
+	FRESULT fr = f_mount(&fs[0], drive, 1);
+
+#ifdef ENABLE_PCBOARD
+	if (FR_OK == fr)
+	{
+		const char *drive_b = sd_get_drive_prefix(sd_get_by_num(1));
+		fr = f_mount(&fs[1], drive_b, 1);
+		return 1;
+	}
+#endif
+	return 0;
+}
+
 int load_rom(Uint8 *ram, char *filename)
 {
 	int ret = 0;
 	UINT bytesRead = 0;
 
-	FRESULT fr = f_mount(&fs, "", 1);
-	if (FR_OK != fr)
-	{
-		ret = 1;
-		return ret;
-	}
-	fr = f_open(&fp, filename, FA_READ);
+	FRESULT fr = f_open(&fp[0], filename, FA_READ);
 	if (FR_OK != fr)
 	{
 		ret = 1;
 		return ret;
 	}
 
-	fr = f_read(&fp, &ram[PAGE_PROGRAM], 0x10000 - PAGE_PROGRAM, &bytesRead);
+	fr = f_read(&fp[0], &ram[PAGE_PROGRAM], 0x10000 - PAGE_PROGRAM, &bytesRead);
 	if (FR_OK != fr)
 	{
 		ret = fr;
@@ -182,7 +197,8 @@ int load_rom(Uint8 *ram, char *filename)
 
 void unmount()
 {
-	f_unmount("");
+	const char *drive = sd_get_drive_prefix(sd_get_by_num(0));
+	f_unmount(drive);
 }
 
 void filea_deo_stat(void)
@@ -199,7 +215,7 @@ void filea_deo_delete(void)
 
 void filea_deo_name(void)
 {
-	poke2(&dev[0xa2], file_init(&ufs[0], (char *)&ram[peek2(&dev[0xa8])]));
+	poke2(&dev[0xa2], file_init(&ufs[0], DRIVE_A, (char *)&ram[peek2(&dev[0xa8])]));
 }
 
 void filea_deo_length(void)
@@ -215,6 +231,42 @@ void filea_deo_read(void)
 }
 
 void filea_deo_write(void)
+{
+	int location = peek2(&dev[0xae]);
+	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
+	poke2(&dev[0xa2], file_write(&ufs[0], &ram[location], length, dev[0xa7]));
+}
+
+void fileb_deo_stat(void)
+{
+	int location = peek2(&dev[0xa4]);
+	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
+	poke2(&dev[0xa2], file_stat(&ufs[1], &ram[location], length));
+}
+
+void fileb_deo_delete(void)
+{
+	poke2(&dev[0xa2], file_delete(&ufs[1]));
+}
+
+void fileb_deo_name(void)
+{
+	poke2(&dev[0xa2], file_init(&ufs[1], DRIVE_B, (char *)&ram[peek2(&dev[0xa8])]));
+}
+
+void fileb_deo_length(void)
+{
+	rL1 = peek2(&dev[0xaa]);
+}
+
+void fileb_deo_read(void)
+{
+	int location = peek2(&dev[0xac]);
+	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;
+	poke2(&dev[0xa2], file_read(&ufs[1], &ram[location], length));
+}
+
+void fileb_deo_write(void)
 {
 	int location = peek2(&dev[0xae]);
 	int length = (0x10000 - location < rL1) ? 0x10000 - location : rL1;

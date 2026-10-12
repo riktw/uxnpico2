@@ -60,39 +60,29 @@ static const char __in_flash() ps2_to_ascii_upper[] = {
 0x00, 0x00, 0x12, 0x00, 0x13, 0x11, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-static const char __in_flash() ps2_to_ascii_cntl[] = {
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09,  '~', 0x00,
-0x00, 0x00, 0x00, 0x00, 0x00, 0x11,  '!', 0x00, 0x00, 0x00, 0x1A, 0x13, 0x01, 0x17,  '@', 0x00,
-0x00, 0x03, 0x18, 0x04, 0x05,  '$',  '#', 0x00, 0x00,  ' ', 0x16, 0x06, 0x14, 0x12,  '%', 0x00,
-0x00, 0x0E, 0x02, 0x08, 0x07, 0x19,  '^', 0x00, 0x00, 0x00, 0x0D, 0x0A, 0x15,  '&',  '*', 0x00,
-0x00,  '<', 0x0B, 0x09, 0x0F,  ')',  '(', 0x00, 0x00,  '>',  '?', 0x0C,  ':', 0x10,  '_', 0x00,
-0x00, 0x00, 0x22, 0x00,  '{',  '+', 0x00, 0x00, 0x00, 0x00, 0x0D,  '}', 0x00,  '|', 0x00, 0x00,
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x14, 0x90, 0x00, 0x00, 0x00,
-0x00, 0x00, 0x12, 0x00, 0x13, 0x11, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
 
 // clang-format on
-
+// this includes the USB keycodes
 uint8_t GetControllerCode(uint8_t ascii)
 {
 	uint8_t mask = 0;
-	if (ascii == 0x90)
+	if (ascii == 0x90 || ascii == 0x4a)
 	{
 		mask |= 0x08;
 	}
-	if (ascii == 0x11)
+	if (ascii == 0x11 || ascii == 0x52)
 	{
 		mask |= 0x10;
 	}
-	if (ascii == 0x12)
+	if (ascii == 0x12 || ascii == 0x51)
 	{
 		mask |= 0x20;
 	}
-	if (ascii == 0x14)
+	if (ascii == 0x14 || ascii == 0x50)
 	{
 		mask |= 0x40;
 	}
-	if (ascii == 0x13)
+	if (ascii == 0x13 || ascii == 0x4f)
 	{
 		mask |= 0x80;
 	}
@@ -173,7 +163,7 @@ void __not_in_flash_func(ps2_ihandler)(void)
 		ascii = controllerButton ? 0 : ascii; // clear ascii if it was a controller button.
 		controllerButton |= control;
 		controllerButton |= (alt << 1);
-		controllerButton |= (shift << 1);
+		controllerButton |= (shift << 2);
 
 		if (!release)
 		{
@@ -209,6 +199,124 @@ void initPS2Keyboard(uint32_t dataPin)
 	// get rid of noise on pins when the PS/2 keyboard is enabled
 	sleep_ms(1);
 	pio_sm_clear_fifos(ps2_pio, ps2_sm);
+}
+
+static uint32_t m_latchPin;
+static uint32_t m_clockPin;
+static uint32_t m_dataPin;
+static uint8_t previousMask = 0;
+
+void checkNesController()
+{
+	uint8_t mask = 0;
+	gpio_put(m_latchPin, true);
+	busy_wait_us(12);
+	gpio_put(m_latchPin, false);
+	busy_wait_us(6);
+
+	for (int i = 0; i < 8; ++i)
+	{
+		mask |= !gpio_get(m_dataPin) << i;
+		gpio_put(m_clockPin, true);
+		busy_wait_us(6);
+		gpio_put(m_clockPin, false);
+		busy_wait_us(6);
+	}
+
+	uint8_t changes = previousMask ^ mask;
+	if (changes & previousMask)
+	{
+		controller_up(changes);
+	}
+	else if (changes & mask)
+	{
+		controller_down(mask);
+	}
+
+	previousMask = mask;
+}
+
+void initNesController(uint32_t latchPin, uint32_t clockPin, uint32_t dataPin)
+{
+	m_latchPin = latchPin;
+	m_clockPin = clockPin;
+	m_dataPin = dataPin;
+
+	gpio_init(m_latchPin);
+	gpio_init(m_clockPin);
+	gpio_init(m_dataPin);
+
+	gpio_set_dir(m_latchPin, GPIO_OUT);
+	gpio_set_dir(m_clockPin, GPIO_OUT);
+	gpio_set_dir(m_dataPin, GPIO_IN);
+
+	gpio_pull_up(m_dataPin);
+}
+
+// look up new key in previous keys
+static inline bool find_key_in_report(hid_keyboard_report_t const *report, uint8_t keycode)
+{
+	for (uint8_t i = 0; i < 6; i++)
+	{
+		if (report->keycode[i] == keycode)
+			return true;
+	}
+
+	return false;
+}
+static uint8_t const keycode2ascii[128][2] = {HID_KEYCODE_TO_ASCII};
+// convert hid keycode to ascii and print via usb device CDC (ignore non-printable)
+void process_kbd_report(uint8_t dev_addr, hid_keyboard_report_t const *report)
+{
+	(void)dev_addr;
+	static hid_keyboard_report_t prev_report = {0, 0, {0}}; // previous report to check key released
+	static uint8_t prevControllerButton = 0;
+
+	// handle controller buttons
+	uint8_t controllerButton = 0;
+	for (uint8_t i = 0; i < 6; i++)
+	{
+		controllerButton |= GetControllerCode(report->keycode[i]);
+	}
+	controllerButton |= (report->modifier & (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL)) ? 1 : 0;
+	controllerButton |= ((report->modifier & (KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_RIGHTALT))) ? 2 : 0;
+	controllerButton |= ((report->modifier & (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT))) ? 4 : 0;
+	uint8_t changes = prevControllerButton ^ controllerButton;
+
+	if (changes & prevControllerButton)
+	{
+		controller_up(changes);
+	}
+	else if (changes & controllerButton)
+	{
+		controller_down(controllerButton);
+	}
+	prevControllerButton = controllerButton;
+
+	// handle ascii characters
+	for (uint8_t i = 0; i < 6; i++)
+	{
+		uint8_t keycode = report->keycode[i];
+		if (keycode)
+		{
+			if (find_key_in_report(&prev_report, keycode))
+			{
+				// exist in previous report means the current key is holding
+			}
+			else
+			{
+				bool const is_shift = report->modifier & (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT);
+				uint8_t ch = keycode2ascii[keycode][is_shift ? 1 : 0];
+
+				if (ch)
+				{
+					controller_key(ch);
+				}
+			}
+		}
+	}
+
+	prev_report = *report;
 }
 
 void controller_down(Uint8 mask)

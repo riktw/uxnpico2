@@ -37,6 +37,65 @@ static uint ps2_pio_irq;
 static uint initCounter = 0;
 static bool initDone = false;
 
+// USB part
+// send mouse report to usb device CDC
+void process_mouse_report(uint8_t dev_addr, hid_mouse_report_t const *report)
+{
+	static mouseEvent_t mouseEvent, previousMouseEvent;
+	static int32_t xpos = 0;
+	static int32_t ypos = 0;
+	//------------- button state  -------------//
+
+	char l = report->buttons & MOUSE_BUTTON_LEFT ? 'L' : '-';
+	char m = report->buttons & MOUSE_BUTTON_MIDDLE ? 'M' : '-';
+	char r = report->buttons & MOUSE_BUTTON_RIGHT ? 'R' : '-';
+
+	// printf("[%u] %c%c%c %d %d %d\r\n", dev_addr, l, m, r, report->x, report->y, report->wheel);
+
+	mouseEvent.leftButton = report->buttons & MOUSE_BUTTON_LEFT;
+	mouseEvent.middleButton = report->buttons & MOUSE_BUTTON_MIDDLE;
+	mouseEvent.rightButton = report->buttons & MOUSE_BUTTON_RIGHT;
+
+	if ((!previousMouseEvent.leftButton) && (mouseEvent.leftButton))
+	{
+		mouse_down(mouseEvent.leftButton << 0);
+	}
+	if ((!previousMouseEvent.middleButton) && (mouseEvent.middleButton))
+	{
+		mouse_down(mouseEvent.middleButton << 1);
+	}
+	if ((!previousMouseEvent.rightButton) && (mouseEvent.rightButton))
+	{
+		mouse_down(mouseEvent.rightButton << 2);
+	}
+
+	if ((previousMouseEvent.leftButton) && (!mouseEvent.leftButton))
+	{
+		mouse_up(previousMouseEvent.leftButton << 0);
+	}
+	if ((previousMouseEvent.middleButton) && (!mouseEvent.middleButton))
+	{
+		mouse_up(previousMouseEvent.middleButton << 1);
+	}
+	if ((previousMouseEvent.rightButton) && (!mouseEvent.rightButton))
+	{
+		mouse_up(previousMouseEvent.rightButton << 2);
+	}
+
+	uint16_t screen_width = peek2(&dev[0x22]);
+	uint16_t screen_height = peek2(&dev[0x24]);
+	previousMouseEvent = mouseEvent;
+	xpos += report->x;
+	ypos += report->y;
+	xpos = (xpos <= 0) ? 0 : xpos;
+	ypos = (ypos <= 0) ? 0 : ypos;
+	xpos = (xpos >= screen_width) ? screen_width : xpos;
+	ypos = (ypos >= screen_height) ? screen_height : ypos;
+	mouse_pos(xpos, ypos);
+}
+
+// PS/2 part
+
 static uint32_t ps2_frame(uint8_t byte)
 {
 	bool parity = 1;
